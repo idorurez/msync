@@ -1,0 +1,158 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Poppins:wght@400;500;600&family=Quicksand:wght@400;500;600&family=Rubik:wght@400;500;600&family=Nunito:wght@400;600;700&display=swap');
+
+:root {
+  --bg-primary: #111827;
+  --bg-secondary: #1f2937;
+  --bg-tertiary: #374151;
+  --bg-hover: #4b5563;
+  --bg-selected: #1e40af;
+  --text-primary: #f9fafb;
+  --text-secondary: #d1d5db;
+  --text-muted: #9ca3af;
+  --accent: #3b82f6;
+  --accent-hover: #60a5fa;
+  --accent-muted: #2563eb;
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --error: #ef4444;
+  --border: #374151;
+  --border-light: #4b5563;
+  --star-filled: #fbbf24;
+  --star-empty: #6b7280;
+  --font-primary: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Consolas', 'Monaco', monospace;
+  --radius: 6px;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+#root {
+  height: 100vh;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--bg-hover);
+}
+
+/* Theme-aware utility classes */
+.bg-theme-primary {
+  background-color: var(--bg-primary);
+}
+
+.bg-theme-secondary {
+  background-color: var(--bg-secondary);
+}
+
+.bg-theme-tertiary {
+  background-color: var(--bg-tertiary);
+}
+
+.bg-theme-hover {
+  background-color: var(--bg-hover);
+}
+
+.bg-theme-selected {
+  background-color: var(--bg-selected);
+}
+
+.text-theme-primary {
+  color: var(--text-primary);
+}
+
+.text-theme-secondary {
+  color: var(--text-secondary);
+}
+
+.text-theme-muted {
+  color: var(--text-muted);
+}
+
+.text-theme-accent {
+  color: var(--accent);
+}
+
+.bg-theme-accent {
+  background-color: var(--accent);
+}
+
+.bg-theme-accent-hover:hover {
+  background-color: var(--accent-hover);
+}
+
+.border-theme {
+  border-color: var(--border);
+}
+
+.border-theme-light {
+  border-color: var(--border-light);
+}
+
+.text-theme-success {
+  color: var(--success);
+}
+
+.text-theme-warning {
+  color: var(--warning);
+}
+
+.text-theme-error {
+  color: var(--error);
+}
+
+.star-filled {
+  color: var(--star-filled);
+}
+
+.star-empty {
+  color: var(--star-empty);
+}
+
+.rounded-theme {
+  border-radius: var(--radius);
+}
+
+/* Selection styling */
+::selection {
+  background-color: var(--accent);
+  color: var(--text-primary);
+}
+
+/* Focus styling */
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Checkbox styling */
+input[type="checkbox"] {
+  accent-color: var(--accent);
+}
