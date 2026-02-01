@@ -10,6 +10,7 @@ interface FileTableProps {
   onDropFiles?: (files: MusicFile[]) => void;
   onRatingChange?: (filePath: string, rating: number) => void;
   onPlayFile?: (filePath: string) => void;
+  onBulkEdit?: (files: MusicFile[]) => void;
   isDropTarget?: boolean;
 }
 
@@ -31,6 +32,7 @@ export function FileTable({
   onDropFiles,
   onRatingChange,
   onPlayFile,
+  onBulkEdit,
   isDropTarget = false
 }: FileTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>('title');
@@ -144,6 +146,14 @@ export function FileTable({
     closeContextMenu();
   }, [onDeleteFiles, selectedFiles, closeContextMenu]);
 
+  const handleBulkEdit = useCallback(() => {
+    if (onBulkEdit && selectedFiles.size > 0) {
+      const selectedFileObjects = files.filter(f => selectedFiles.has(f.path));
+      onBulkEdit(selectedFileObjects);
+    }
+    closeContextMenu();
+  }, [onBulkEdit, selectedFiles, files, closeContextMenu]);
+
   const handleSelectAllFromMenu = useCallback(() => {
     onSelectFiles(new Set(files.map(f => f.path)));
     closeContextMenu();
@@ -189,8 +199,8 @@ export function FileTable({
         const data = event.dataTransfer.getData('application/json');
         const droppedFiles = JSON.parse(data) as MusicFile[];
         onDropFiles(droppedFiles);
-      } catch (error) {
-        console.error('Error parsing dropped files:', error);
+      } catch {
+        // Drop failed
       }
     }
   }, [onDropFiles]);
@@ -211,13 +221,19 @@ export function FileTable({
 
   const formatDate = (date: Date | null) => {
     if (!date) return '-';
-    return new Date(date).toLocaleDateString();
+    try {
+      const d = new Date(date);
+      if (isNaN(d.getTime())) return '-';
+      return d.toLocaleDateString();
+    } catch {
+      return '-';
+    }
   };
 
   if (files.length === 0) {
     return (
       <div
-        className={`flex items-center justify-center h-full text-gray-500 ${
+        className={`flex items-center justify-center h-full text-gray-500 font-tech text-xs ${
           isDragOver ? 'bg-blue-900 bg-opacity-20 border-2 border-dashed border-blue-500' : ''
         }`}
         onDragOver={handleDragOver}
@@ -245,46 +261,46 @@ export function FileTable({
         </div>
       )}
 
-      <table className="w-full text-sm">
+      <table className="w-full font-tech text-xs">
         <thead className="sticky top-0 bg-gray-800 text-left">
           <tr>
-            <th className="p-2 w-8">
+            <th className="px-1 py-0.5 w-6">
               <input
                 type="checkbox"
                 checked={selectedFiles.size === files.length && files.length > 0}
                 onChange={handleSelectAll}
-                className="rounded bg-gray-700 border-gray-600"
+                className="rounded bg-gray-700 border-gray-600 w-3 h-3"
               />
             </th>
             <th
-              className="p-2 cursor-pointer hover:bg-gray-700 transition-colors"
+              className="px-1 py-0.5 cursor-pointer hover:bg-gray-700 transition-colors text-[10px] uppercase tracking-wide"
               onClick={() => handleSort('title')}
             >
               Title <SortIcon column="title" />
             </th>
             <th
-              className="p-2 cursor-pointer hover:bg-gray-700 transition-colors"
+              className="px-1 py-0.5 cursor-pointer hover:bg-gray-700 transition-colors text-[10px] uppercase tracking-wide"
               onClick={() => handleSort('artist')}
             >
               Artist <SortIcon column="artist" />
             </th>
             <th
-              className="p-2 cursor-pointer hover:bg-gray-700 transition-colors"
+              className="px-1 py-0.5 cursor-pointer hover:bg-gray-700 transition-colors text-[10px] uppercase tracking-wide"
               onClick={() => handleSort('album')}
             >
               Album <SortIcon column="album" />
             </th>
             <th
-              className="p-2 cursor-pointer hover:bg-gray-700 transition-colors w-32"
+              className="px-1 py-0.5 cursor-pointer hover:bg-gray-700 transition-colors text-[10px] uppercase tracking-wide w-20"
               onClick={() => handleSort('rating')}
             >
               Rating <SortIcon column="rating" />
             </th>
             <th
-              className="p-2 cursor-pointer hover:bg-gray-700 transition-colors w-32"
+              className="px-1 py-0.5 cursor-pointer hover:bg-gray-700 transition-colors text-[10px] uppercase tracking-wide w-20"
               onClick={() => handleSort('lastMetadataUpdate')}
             >
-              Last Update <SortIcon column="lastMetadataUpdate" />
+              Updated <SortIcon column="lastMetadataUpdate" />
             </th>
           </tr>
         </thead>
@@ -297,37 +313,38 @@ export function FileTable({
               onContextMenu={(e) => handleContextMenu(e, file)}
               draggable
               onDragStart={(e) => handleDragStart(e, file)}
-              className={`cursor-pointer border-b border-gray-800 transition-colors ${
+              className={`cursor-pointer border-b border-gray-800/50 transition-colors ${
                 selectedFiles.has(file.path)
                   ? 'bg-blue-900 bg-opacity-50 hover:bg-blue-800'
                   : 'hover:bg-gray-800'
               }`}
             >
-              <td className="p-2">
+              <td className="px-1 py-0.5">
                 <input
                   type="checkbox"
                   checked={selectedFiles.has(file.path)}
                   onChange={() => {}}
-                  className="rounded bg-gray-700 border-gray-600"
+                  className="rounded bg-gray-700 border-gray-600 w-3 h-3"
                 />
               </td>
-              <td className="p-2 truncate max-w-xs" title={file.title}>
+              <td className="px-1 py-0.5 truncate max-w-[180px]" title={file.title}>
                 {file.title}
               </td>
-              <td className="p-2 truncate max-w-xs text-gray-400" title={file.artist}>
+              <td className="px-1 py-0.5 truncate max-w-[120px] text-gray-400" title={file.artist}>
                 {file.artist || '-'}
               </td>
-              <td className="p-2 truncate max-w-xs text-gray-400" title={file.album}>
+              <td className="px-1 py-0.5 truncate max-w-[120px] text-gray-400" title={file.album}>
                 {file.album || '-'}
               </td>
-              <td className="p-2">
+              <td className="px-1 py-0.5">
                 <RatingStars
                   rating={file.rating}
                   editable={!!onRatingChange}
                   onChange={(rating) => onRatingChange?.(file.path, rating)}
+                  size="small"
                 />
               </td>
-              <td className="p-2 text-gray-400">
+              <td className="px-1 py-0.5 text-gray-400 text-[10px]">
                 {formatDate(file.lastMetadataUpdate)}
               </td>
             </tr>
@@ -338,29 +355,42 @@ export function FileTable({
       {/* Context Menu */}
       {contextMenu.visible && (
         <div
-          className="fixed bg-gray-800 border border-gray-700 rounded shadow-lg py-1 z-50 min-w-40"
+          className="fixed bg-gray-800 border border-gray-700 rounded shadow-lg py-0.5 z-50 min-w-32 font-tech text-xs"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <button
-            className="w-full px-4 py-2 text-left hover:bg-gray-700 flex items-center gap-2"
+            className="w-full px-2 py-1 text-left hover:bg-gray-700 flex items-center gap-1"
             onClick={handleSelectAllFromMenu}
           >
             Select All
           </button>
           <button
-            className="w-full px-4 py-2 text-left hover:bg-gray-700 flex items-center gap-2"
+            className="w-full px-2 py-1 text-left hover:bg-gray-700 flex items-center gap-1"
             onClick={handleDeselectAll}
           >
             Deselect All
           </button>
-          <div className="border-t border-gray-700 my-1"></div>
+          {onBulkEdit && selectedFiles.size > 0 && (
+            <>
+              <div className="border-t border-gray-700 my-0.5"></div>
+              <button
+                className="w-full px-2 py-1 text-left hover:bg-gray-700 text-purple-400 flex items-center gap-1"
+                onClick={handleBulkEdit}
+              >
+                Edit Metadata ({selectedFiles.size})
+              </button>
+            </>
+          )}
           {onDeleteFiles && (
-            <button
-              className="w-full px-4 py-2 text-left hover:bg-gray-700 text-red-400 flex items-center gap-2"
-              onClick={handleDelete}
-            >
-              Delete ({selectedFiles.size} file{selectedFiles.size !== 1 ? 's' : ''})
-            </button>
+            <>
+              <div className="border-t border-gray-700 my-0.5"></div>
+              <button
+                className="w-full px-2 py-1 text-left hover:bg-gray-700 text-red-400 flex items-center gap-1"
+                onClick={handleDelete}
+              >
+                Delete ({selectedFiles.size})
+              </button>
+            </>
           )}
         </div>
       )}

@@ -75,6 +75,35 @@ ipcMain.handle('select-folder', async () => {
   return result.canceled ? null : result.filePaths[0];
 });
 
+ipcMain.handle('select-image', async () => {
+  const result = await dialog.showOpenDialog(mainWindow!, {
+    properties: ['openFile'],
+    filters: [
+      { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'] }
+    ]
+  });
+  return result.canceled ? null : result.filePaths[0];
+});
+
+ipcMain.handle('list-images', async (_, folderPath: string) => {
+  try {
+    const entries = fs.readdirSync(folderPath, { withFileTypes: true });
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'];
+    return entries
+      .filter(entry => entry.isFile() && imageExtensions.includes(path.extname(entry.name).toLowerCase()))
+      .map(entry => ({
+        name: entry.name,
+        path: path.join(folderPath, entry.name)
+      }));
+  } catch {
+    return [];
+  }
+});
+
+ipcMain.handle('get-app-path', () => {
+  return app.getAppPath();
+});
+
 ipcMain.handle('scan-local-folder', async (_, folderPath: string) => {
   return scanFolder(folderPath);
 });
@@ -93,38 +122,20 @@ ipcMain.handle('write-local-metadata', async (_, filePath: string, metadata: Par
 
 ipcMain.handle('delete-local-files', async (_, filePaths: string[]) => {
   for (const filePath of filePaths) {
-    try {
-      fs.unlinkSync(filePath);
-    } catch (error) {
-      console.error(`Error deleting ${filePath}:`, error);
-      throw error;
-    }
+    fs.unlinkSync(filePath);
   }
 });
 
 ipcMain.handle('play-local-file', async (_, filePath: string) => {
-  try {
-    await shell.openPath(filePath);
-  } catch (error) {
-    console.error(`Error playing ${filePath}:`, error);
-    throw error;
-  }
+  await shell.openPath(filePath);
 });
 
 ipcMain.handle('play-android-file', async (_, androidPath: string) => {
   if (!adbManager) throw new Error('No device connected');
 
-  // Pull file to temp location and play it
   const tempPath = path.join(app.getPath('temp'), 'msync-play-' + path.basename(androidPath));
-
-  try {
-    await adbManager.pullFile(androidPath, tempPath);
-    await shell.openPath(tempPath);
-    // Note: temp file will be cleaned up on next play or app exit
-  } catch (error) {
-    console.error(`Error playing Android file ${androidPath}:`, error);
-    throw error;
-  }
+  await adbManager.pullFile(androidPath, tempPath);
+  await shell.openPath(tempPath);
 });
 
 // IPC Handlers - ADB operations

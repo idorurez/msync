@@ -2,7 +2,7 @@ import { useState } from 'react';
 
 interface RatingStarsProps {
   rating: number; // 0-5
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'small' | 'sm' | 'md' | 'lg';
   editable?: boolean;
   onChange?: (rating: number) => void;
 }
@@ -13,6 +13,7 @@ export function RatingStars({ rating, size = 'sm', editable = false, onChange }:
   const displayRating = hoverRating ?? normalizedRating;
 
   const sizeClasses = {
+    small: 'text-[10px]',
     sm: 'text-sm',
     md: 'text-base',
     lg: 'text-lg'

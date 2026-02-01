@@ -22,8 +22,8 @@ export function FolderTree({ node, onSelect, isAndroid = false, depth = 0 }: Fol
           ? await window.electronAPI.getAndroidFolderTree(node.path)
           : await window.electronAPI.getLocalFolderTree(node.path);
         setChildren(tree.children);
-      } catch (error) {
-        console.error('Error loading folder:', error);
+      } catch {
+        // Failed to load folder
       } finally {
         setIsLoading(false);
       }
@@ -38,27 +38,27 @@ export function FolderTree({ node, onSelect, isAndroid = false, depth = 0 }: Fol
   const hasChildren = children.length > 0 || !isExpanded;
 
   return (
-    <div className="select-none">
+    <div className="select-none font-tech text-xs">
       <div
-        className="flex items-center gap-1 py-1 px-2 hover:bg-gray-800 rounded cursor-pointer group"
-        style={{ paddingLeft: `${depth * 16 + 8}px` }}
+        className="flex items-center gap-0.5 py-0.5 px-1 hover:bg-gray-800 rounded cursor-pointer group"
+        style={{ paddingLeft: `${depth * 12 + 4}px` }}
       >
         {/* Expand/collapse button */}
         <button
           onClick={handleToggle}
-          className="w-5 h-5 flex items-center justify-center text-gray-500 hover:text-white"
+          className="w-4 h-4 flex items-center justify-center text-gray-500 hover:text-white text-[10px]"
         >
           {isLoading ? (
             <span className="animate-spin">⟳</span>
           ) : hasChildren ? (
             isExpanded ? '▼' : '▶'
           ) : (
-            <span className="w-3" />
+            <span className="w-2" />
           )}
         </button>
 
         {/* Folder icon */}
-        <span className="text-yellow-500">📁</span>
+        <span className="text-yellow-500 text-xs">📁</span>
 
         {/* Folder name */}
         <span
@@ -72,7 +72,7 @@ export function FolderTree({ node, onSelect, isAndroid = false, depth = 0 }: Fol
         {/* Select button */}
         <button
           onClick={handleSelect}
-          className="hidden group-hover:block px-2 py-0.5 text-xs bg-blue-600 hover:bg-blue-700 rounded"
+          className="hidden group-hover:block px-1.5 py-0.5 text-[10px] bg-blue-600 hover:bg-blue-700 rounded"
         >
           Open
         </button>

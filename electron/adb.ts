@@ -70,15 +70,13 @@ export class AdbManager extends EventEmitter {
   constructor() {
     super();
     this.adbPath = findAdb();
-    console.log('ADB path:', this.adbPath);
 
     // Start ADB server if we found the executable
     if (this.adbPath) {
       try {
         execSync(`"${this.adbPath}" start-server`, { encoding: 'utf8' });
-        console.log('ADB server started');
-      } catch (error) {
-        console.error('Failed to start ADB server:', error);
+      } catch {
+        // ADB server may already be running
       }
     }
 
@@ -93,7 +91,6 @@ export class AdbManager extends EventEmitter {
       const tracker = await this.client.trackDevices();
 
       tracker.on('add', async (device: Device) => {
-        console.log('Device connected:', device.id);
         this.currentDevice = device;
         await this.updateDeviceInfo(device);
         if (this.deviceInfo) {
@@ -102,7 +99,6 @@ export class AdbManager extends EventEmitter {
       });
 
       tracker.on('remove', (device: Device) => {
-        console.log('Device disconnected:', device.id);
         if (this.currentDevice?.id === device.id) {
           this.currentDevice = null;
           this.deviceInfo = null;
@@ -110,23 +106,19 @@ export class AdbManager extends EventEmitter {
         }
       });
 
-      tracker.on('end', () => {
-        console.log('Device tracking ended');
-      });
+      tracker.on('end', () => {});
 
       // Check for already connected devices
       const devices = await this.client.listDevices();
-      console.log('Initial devices:', devices.map(d => d.id));
       if (devices.length > 0) {
         this.currentDevice = devices[0];
         await this.updateDeviceInfo(devices[0]);
         if (this.deviceInfo) {
-          console.log('Emitting device-connected:', this.deviceInfo);
           this.emit('device-connected', this.deviceInfo);
         }
       }
-    } catch (error) {
-      console.error('Error starting device tracking:', error);
+    } catch {
+      // Device tracking failed - will retry on connect
     }
   }
 
@@ -138,8 +130,7 @@ export class AdbManager extends EventEmitter {
         model: properties['ro.product.model'] || 'Unknown Device',
         connected: true
       };
-    } catch (error) {
-      console.error('Error getting device info:', error);
+    } catch {
       this.deviceInfo = {
         id: device.id,
         model: 'Unknown Device',
@@ -160,8 +151,8 @@ export class AdbManager extends EventEmitter {
         await this.updateDeviceInfo(devices[0]);
         return this.deviceInfo;
       }
-    } catch (error) {
-      console.error('Error connecting to device:', error);
+    } catch {
+      // Connection failed
     }
 
     return null;
@@ -177,16 +168,39 @@ export class AdbManager extends EventEmitter {
       throw new Error('No device connected');
     }
 
+    if (!folderPath || typeof folderPath !== 'string') {
+      throw new Error('Invalid folder path');
+    }
+
     const files: MusicFile[] = [];
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'msync-'));
+    let tempDir: string;
+    try {
+      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'msync-'));
+    } catch (e) {
+      throw new Error(`Failed to create temp directory: ${e}`);
+    }
+
+    // First check if the directory exists
+    const entries = await this.listDirectory(folderPath);
+    if (entries.length === 0) {
+      // Could be empty or doesn't exist - try to distinguish
+      try {
+        const device = this.client.getDevice(this.currentDevice.id);
+        await device.readdir(folderPath);
+      } catch (e) {
+        throw new Error(`Cannot access ${folderPath} - folder may not exist or permission denied`);
+      }
+    }
 
     try {
-      const entries = await this.listDirectory(folderPath);
-
       for (const entry of entries) {
         if (entry.isDirectory) {
-          const subFiles = await this.scanFolder(entry.path);
-          files.push(...subFiles);
+          try {
+            const subFiles = await this.scanFolder(entry.path);
+            files.push(...subFiles);
+          } catch {
+            // Skip inaccessible subdirectories
+          }
         } else if (isSupportedAudio(entry.name)) {
           try {
             // Pull file to temp location to read metadata
@@ -195,17 +209,17 @@ export class AdbManager extends EventEmitter {
 
             const metadata = await readMetadata(tempPath);
 
-            // Update path to android path
+            // Update path to android path and use Android file's mtime
             files.push({
               ...metadata,
               id: entry.path,
-              path: entry.path
+              path: entry.path,
+              lastMetadataUpdate: entry.mtime || metadata.lastMetadataUpdate
             });
 
             // Clean up temp file
             fs.unlinkSync(tempPath);
-          } catch (error) {
-            console.error(`Error reading metadata for ${entry.path}:`, error);
+          } catch {
             // Add basic file info without full metadata
             const format = getAudioFormat(entry.name);
             if (format) {
@@ -217,7 +231,7 @@ export class AdbManager extends EventEmitter {
                 artist: '',
                 album: '',
                 rating: 0,
-                lastMetadataUpdate: null,
+                lastMetadataUpdate: entry.mtime || null,
                 format,
                 size: entry.size || 0
               });
@@ -228,7 +242,7 @@ export class AdbManager extends EventEmitter {
     } finally {
       // Clean up temp directory
       try {
-        fs.rmdirSync(tempDir, { recursive: true });
+        fs.rmSync(tempDir, { recursive: true, force: true });
       } catch {
         // Ignore cleanup errors
       }
@@ -242,9 +256,14 @@ export class AdbManager extends EventEmitter {
     path: string;
     isDirectory: boolean;
     size?: number;
+    mtime?: Date;
   }>> {
     if (!this.currentDevice) {
       throw new Error('No device connected');
+    }
+
+    if (!dirPath || typeof dirPath !== 'string') {
+      return [];
     }
 
     const entries: Array<{
@@ -252,6 +271,7 @@ export class AdbManager extends EventEmitter {
       path: string;
       isDirectory: boolean;
       size?: number;
+      mtime?: Date;
     }> = [];
 
     try {
@@ -261,15 +281,26 @@ export class AdbManager extends EventEmitter {
       for (const file of files) {
         if (file.name === '.' || file.name === '..') continue;
 
+        // adbkit mtime is in seconds (Unix timestamp)
+        let mtime: Date | undefined;
+        if (file.mtime && typeof file.mtime === 'number' && file.mtime > 0) {
+          mtime = new Date(file.mtime * 1000);
+          // Validate the date
+          if (isNaN(mtime.getTime())) {
+            mtime = undefined;
+          }
+        }
+
         entries.push({
           name: file.name,
           path: path.posix.join(dirPath, file.name),
           isDirectory: file.isDirectory(),
-          size: file.size
+          size: file.size,
+          mtime
         });
       }
-    } catch (error) {
-      console.error(`Error listing directory ${dirPath}:`, error);
+    } catch {
+      // Directory listing failed
     }
 
     return entries;
@@ -278,6 +309,10 @@ export class AdbManager extends EventEmitter {
   async getFolderTree(folderPath: string): Promise<FolderNode> {
     if (!this.currentDevice) {
       throw new Error('No device connected');
+    }
+
+    if (!folderPath || typeof folderPath !== 'string') {
+      throw new Error('Invalid folder path');
     }
 
     const name = path.basename(folderPath) || folderPath;
@@ -306,8 +341,8 @@ export class AdbManager extends EventEmitter {
       }
 
       node.children.sort((a, b) => a.name.localeCompare(b.name));
-    } catch (error) {
-      console.error(`Error getting folder tree for ${folderPath}:`, error);
+    } catch {
+      // Folder tree failed
     }
 
     return node;
@@ -332,7 +367,6 @@ export class AdbManager extends EventEmitter {
         transfer.pipe(writeStream);
       });
     } catch (error) {
-      console.error(`Error pulling file ${androidPath}:`, error);
       throw error;
     }
   }
@@ -351,7 +385,6 @@ export class AdbManager extends EventEmitter {
         transfer.on('end', resolve);
       });
     } catch (error) {
-      console.error(`Error pushing file to ${androidPath}:`, error);
       throw error;
     }
   }
@@ -365,11 +398,8 @@ export class AdbManager extends EventEmitter {
 
     for (const filePath of filePaths) {
       try {
-        // Use shell command to delete file
         await device.shell(`rm "${filePath}"`);
-        console.log(`Deleted ${filePath}`);
       } catch (error) {
-        console.error(`Error deleting ${filePath}:`, error);
         throw error;
       }
     }

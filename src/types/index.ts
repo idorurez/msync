@@ -52,6 +52,9 @@ export interface AppState {
 export interface ElectronAPI {
   // Local file operations
   selectFolder: () => Promise<string | null>;
+  selectImage: () => Promise<string | null>;
+  listImages: (folderPath: string) => Promise<Array<{ name: string; path: string }>>;
+  getAppPath: () => Promise<string>;
   scanLocalFolder: (path: string) => Promise<MusicFile[]>;
   getLocalFolderTree: (path: string) => Promise<FolderNode>;
   readLocalMetadata: (filePath: string) => Promise<MusicFile>;

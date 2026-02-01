@@ -23,21 +23,21 @@ export function ThemeSelector() {
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-theme bg-theme-tertiary hover:bg-theme-hover transition-colors text-sm"
+        className="flex items-center gap-1.5 px-2 py-1 rounded-theme bg-theme-tertiary hover:bg-theme-hover transition-colors text-xs font-tech"
         title="Change theme"
       >
         <span
-          className="w-4 h-4 rounded-full border border-theme"
+          className="w-3 h-3 rounded-full border border-theme"
           style={{ backgroundColor: themes[themeName].colors.accent }}
         />
         <span className="text-theme-secondary">{themes[themeName].name}</span>
-        <span className="text-theme-muted text-xs">▼</span>
+        <span className="text-theme-muted text-[10px]">▼</span>
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 top-full mt-2 py-2 bg-theme-secondary border border-theme rounded-theme shadow-xl z-50 min-w-48">
-          <div className="px-3 py-1 text-xs text-theme-muted uppercase tracking-wide">
-            Select Theme
+        <div className="absolute right-0 top-full mt-1 py-1 bg-theme-secondary border border-theme rounded-theme shadow-xl z-50 min-w-36 font-tech">
+          <div className="px-2 py-0.5 text-[10px] text-theme-muted uppercase tracking-wide">
+            Theme
           </div>
           {availableThemes.map((name) => {
             const theme = themes[name];
@@ -50,23 +50,19 @@ export function ThemeSelector() {
                   setTheme(name);
                   setIsOpen(false);
                 }}
-                className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors ${
+                className={`w-full flex items-center gap-2 px-2 py-1 text-left text-xs transition-colors ${
                   isActive ? 'bg-theme-selected' : 'hover:bg-theme-hover'
                 }`}
               >
                 {/* Color preview */}
-                <div className="flex gap-1">
+                <div className="flex gap-0.5">
                   <span
-                    className="w-3 h-3 rounded-full"
+                    className="w-2 h-2 rounded-full"
                     style={{ backgroundColor: theme.colors.bgPrimary }}
                   />
                   <span
-                    className="w-3 h-3 rounded-full"
+                    className="w-2 h-2 rounded-full"
                     style={{ backgroundColor: theme.colors.accent }}
-                  />
-                  <span
-                    className="w-3 h-3 rounded-full"
-                    style={{ backgroundColor: theme.colors.textPrimary }}
                   />
                 </div>
 
@@ -77,7 +73,7 @@ export function ThemeSelector() {
 
                 {/* Active indicator */}
                 {isActive && (
-                  <span className="ml-auto text-theme-accent">✓</span>
+                  <span className="ml-auto text-theme-accent text-[10px]">✓</span>
                 )}
               </button>
             );

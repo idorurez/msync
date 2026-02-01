@@ -6,6 +6,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectFolder: (): Promise<string | null> =>
     ipcRenderer.invoke('select-folder'),
 
+  selectImage: (): Promise<string | null> =>
+    ipcRenderer.invoke('select-image'),
+
+  listImages: (folderPath: string): Promise<Array<{ name: string; path: string }>> =>
+    ipcRenderer.invoke('list-images', folderPath),
+
+  getAppPath: (): Promise<string> =>
+    ipcRenderer.invoke('get-app-path'),
+
   scanLocalFolder: (path: string): Promise<MusicFile[]> =>
     ipcRenderer.invoke('scan-local-folder', path),
 

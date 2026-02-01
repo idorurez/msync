@@ -1,25 +1,33 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Pane } from './components/Pane';
 import { ThemeSelector } from './components/ThemeSelector';
+import { BulkEditModal } from './components/BulkEditModal';
+import { SettingsModal } from './components/SettingsModal';
 import type { MusicFile, DeviceInfo, SyncProgress } from './types';
 
 const STORAGE_KEY = 'msync_settings';
 
-function loadSettings(): { localPath: string | null; androidPath: string } {
+interface AppSettings {
+  localPath: string | null;
+  androidPath: string;
+  customHeaderBg?: string;
+}
+
+function loadSettings(): AppSettings {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) return JSON.parse(saved);
-  } catch (e) {
-    console.error('Error loading settings:', e);
+  } catch {
+    // Use defaults
   }
   return { localPath: null, androidPath: '/sdcard/Music' };
 }
 
-function saveSettings(localPath: string | null, androidPath: string) {
+function saveSettings(settings: AppSettings) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ localPath, androidPath }));
-  } catch (e) {
-    console.error('Error saving settings:', e);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  } catch {
+    // Save failed
   }
 }
 
@@ -35,11 +43,22 @@ function App() {
 
   // Android state
   const [device, setDevice] = useState<DeviceInfo | null>(null);
-  const [androidPath, setAndroidPath] = useState(settings.current.androidPath);
+  const [androidPath, setAndroidPath] = useState(settings.current.androidPath || '/sdcard/Music');
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [androidFiles, setAndroidFiles] = useState<MusicFile[]>([]);
   const [selectedAndroidFiles, setSelectedAndroidFiles] = useState<Set<string>>(new Set());
   const [androidLoading, setAndroidLoading] = useState(false);
+  const [androidError, setAndroidError] = useState<string | null>(null);
+
+  // Custom header settings
+  const [customHeaderBg, setCustomHeaderBg] = useState<string | undefined>(settings.current.customHeaderBg);
+
+  // Bulk edit modal state
+  const [bulkEditFiles, setBulkEditFiles] = useState<MusicFile[] | null>(null);
+  const [bulkEditSource, setBulkEditSource] = useState<'local' | 'android' | null>(null);
+
+  // Settings modal state
+  const [showSettings, setShowSettings] = useState(false);
 
   // Sync state
   const [syncProgress, setSyncProgress] = useState<SyncProgress>({
@@ -57,26 +76,34 @@ function App() {
       const files = await window.electronAPI.scanLocalFolder(path);
       setLocalFiles(files);
       setSelectedLocalFiles(new Set());
-    } catch (error) {
-      console.error('Error loading local files:', error);
+    } catch {
+      // Load failed
     } finally {
       setLocalLoading(false);
     }
   }, []);
 
   // Load Android files
-  const loadAndroidFiles = useCallback(async (path: string, dev?: DeviceInfo | null) => {
+  const loadAndroidFiles = useCallback(async (path: string | undefined, dev?: DeviceInfo | null) => {
     const currentDevice = dev ?? deviceRef.current;
     if (!currentDevice) return;
+    if (!path) {
+      return;
+    }
 
     setAndroidLoading(true);
+    setAndroidError(null);
     setSyncProgress({ current: 0, total: 0, currentFile: '', status: 'idle' });
     try {
       const files = await window.electronAPI.scanAndroidFolder(path);
       setAndroidFiles(files);
       setSelectedAndroidFiles(new Set());
+      if (files.length === 0) {
+        setAndroidError(`No audio files found in ${path}`);
+      }
     } catch (error) {
-      console.error('Error loading Android files:', error);
+      setAndroidError(`Failed to scan: ${error}`);
+      setAndroidFiles([]);
     } finally {
       setAndroidLoading(false);
     }
@@ -120,8 +147,8 @@ function App() {
 
   // Save settings when paths change
   useEffect(() => {
-    saveSettings(localPath, androidPath);
-  }, [localPath, androidPath]);
+    saveSettings({ localPath, androidPath, customHeaderBg });
+  }, [localPath, androidPath, customHeaderBg]);
 
   const handleRetryConnect = async () => {
     setConnectionError(null);
@@ -165,7 +192,6 @@ function App() {
       setSelectedLocalFiles(new Set());
       if (localPath) loadLocalFiles(localPath);
     } catch (error) {
-      console.error('Error deleting local files:', error);
       alert('Error deleting files: ' + error);
     }
   };
@@ -177,7 +203,6 @@ function App() {
       setSelectedAndroidFiles(new Set());
       loadAndroidFiles(androidPath);
     } catch (error) {
-      console.error('Error deleting Android files:', error);
       alert('Error deleting files: ' + error);
     }
   };
@@ -186,12 +211,12 @@ function App() {
   const handleLocalRatingChange = async (filePath: string, rating: number) => {
     try {
       await window.electronAPI.writeLocalMetadata(filePath, { rating });
-      // Update local state
+      // Update local state with new rating and current time as lastMetadataUpdate
+      const now = new Date();
       setLocalFiles(files =>
-        files.map(f => f.path === filePath ? { ...f, rating } : f)
+        files.map(f => f.path === filePath ? { ...f, rating, lastMetadataUpdate: now } : f)
       );
     } catch (error) {
-      console.error('Error updating rating:', error);
       alert('Error updating rating: ' + error);
     }
   };
@@ -201,20 +226,18 @@ function App() {
     const file = androidFiles.find(f => f.path === filePath);
     if (!file) return;
 
-    // Update UI optimistically
+    // Update UI optimistically with new rating and current time
+    const now = new Date();
     setAndroidFiles(files =>
-      files.map(f => f.path === filePath ? { ...f, rating } : f)
+      files.map(f => f.path === filePath ? { ...f, rating, lastMetadataUpdate: now } : f)
     );
 
     try {
-      // Use the sync mechanism to update the rating
-      // Create a temporary approach: pull file, write rating, push back
       await window.electronAPI.updateAndroidMetadata(filePath, { rating });
     } catch (error) {
-      console.error('Error updating Android rating:', error);
       // Revert optimistic update on error
       setAndroidFiles(files =>
-        files.map(f => f.path === filePath ? { ...f, rating: file.rating } : f)
+        files.map(f => f.path === filePath ? { ...f, rating: file.rating, lastMetadataUpdate: file.lastMetadataUpdate } : f)
       );
       alert('Error updating rating: ' + error);
     }
@@ -224,8 +247,8 @@ function App() {
   const handlePlayLocalFile = async (filePath: string) => {
     try {
       await window.electronAPI.playLocalFile(filePath);
-    } catch (error) {
-      console.error('Error playing file:', error);
+    } catch {
+      // Play failed
     }
   };
 
@@ -233,9 +256,55 @@ function App() {
     try {
       await window.electronAPI.playAndroidFile(filePath);
     } catch (error) {
-      console.error('Error playing Android file:', error);
       alert('Error playing file: ' + error);
     }
+  };
+
+  // Bulk edit handlers
+  const handleBulkEditLocal = (files: MusicFile[]) => {
+    setBulkEditFiles(files);
+    setBulkEditSource('local');
+  };
+
+  const handleBulkEditAndroid = (files: MusicFile[]) => {
+    setBulkEditFiles(files);
+    setBulkEditSource('android');
+  };
+
+  const handleBulkEditSave = async (updates: Partial<MusicFile>) => {
+    if (!bulkEditFiles || !bulkEditSource) return;
+
+    for (const file of bulkEditFiles) {
+      try {
+        if (bulkEditSource === 'local') {
+          await window.electronAPI.writeLocalMetadata(file.path, updates);
+        } else {
+          await window.electronAPI.updateAndroidMetadata(file.path, updates);
+        }
+      } catch {
+        // Update failed
+      }
+    }
+
+    // Refresh the appropriate file list
+    if (bulkEditSource === 'local' && localPath) {
+      loadLocalFiles(localPath);
+    } else if (bulkEditSource === 'android') {
+      loadAndroidFiles(androidPath);
+    }
+
+    setBulkEditFiles(null);
+    setBulkEditSource(null);
+  };
+
+  const handleBulkEditClose = () => {
+    setBulkEditFiles(null);
+    setBulkEditSource(null);
+  };
+
+  // Settings handlers
+  const handleSettingsSave = (newSettings: { customHeaderBg?: string }) => {
+    setCustomHeaderBg(newSettings.customHeaderBg);
   };
 
   // Drop handlers
@@ -309,7 +378,6 @@ function App() {
 
       return { local: freshLocalFiles, android: freshAndroidFiles };
     } catch (error) {
-      console.error('Error refreshing:', error);
       setSyncProgress({ current: 0, total: 0, currentFile: '', status: 'error', error: String(error) });
       return null;
     }
@@ -406,7 +474,6 @@ function App() {
           );
         }
       } catch (error) {
-        console.error('Sync error:', error);
         setSyncProgress({
           current: i + 1,
           total,
@@ -450,29 +517,70 @@ function App() {
   return (
     <div className="h-screen flex flex-col bg-theme-primary text-theme-primary">
       {/* Header */}
-      <header className="flex items-center justify-between px-4 py-3 bg-theme-secondary border-b border-theme">
-        <h1 className="text-xl font-semibold text-theme-primary">msync</h1>
-        <div className="flex items-center gap-4">
+      <header className={`flex items-center justify-between px-4 py-2 header-floral border-b border-theme relative z-10 ${customHeaderBg ? 'has-custom-bg' : ''}`}>
+        {customHeaderBg && (
+          <>
+            <div
+              className="header-bg-image"
+              style={{
+                backgroundImage: `url(${customHeaderBg.startsWith('http') ? customHeaderBg : `file:///${customHeaderBg.replace(/\\/g, '/')}`})`
+              }}
+            />
+            <div className="header-bg-overlay" />
+          </>
+        )}
+        <h1
+          className="text-3xl font-fancy text-white drop-shadow-lg tracking-wide relative z-10"
+          style={{ textShadow: '0 0 20px rgba(167,139,250,0.5)' }}
+        >
+          msync
+        </h1>
+
+        <div className="flex items-center gap-3 relative z-10">
+          {/* Sync button in header */}
+          <button
+            onClick={handleSync}
+            disabled={!canSync || syncProgress.status === 'syncing'}
+            className={`
+              flex items-center gap-1.5 px-4 py-1.5 rounded-theme font-tech font-semibold text-sm transition-all
+              ${canSync && syncProgress.status !== 'syncing'
+                ? 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white shadow-lg'
+                : 'bg-theme-tertiary text-theme-muted cursor-not-allowed'
+              }
+            `}
+            title="Sync metadata between local and Android (newer wins)"
+          >
+            <span className="text-base">⇄</span>
+            <span>{syncProgress.status === 'syncing' ? 'Syncing...' : 'Sync Metadata'}</span>
+          </button>
+
+          <button
+            onClick={() => setShowSettings(true)}
+            className="px-2 py-1 text-xs bg-theme-tertiary hover:bg-theme-hover rounded-theme font-tech transition-colors"
+            title="Customize header"
+          >
+            ⚙
+          </button>
           <ThemeSelector />
           {device ? (
-            <span className="flex items-center gap-2 text-theme-success">
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--success)' }}></span>
+            <span className="flex items-center gap-1.5 text-theme-success font-tech text-sm">
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: 'var(--success)' }}></span>
               {device.model}
             </span>
           ) : (
             <div className="flex items-center gap-2">
-              <span className="flex items-center gap-2 text-theme-muted">
-                <span className="w-2 h-2 bg-theme-tertiary rounded-full"></span>
+              <span className="flex items-center gap-1.5 text-theme-muted font-tech text-sm">
+                <span className="w-1.5 h-1.5 bg-theme-tertiary rounded-full"></span>
                 No device
               </span>
               <button
                 onClick={handleRetryConnect}
-                className="px-2 py-1 text-xs bg-theme-accent bg-theme-accent-hover rounded-theme"
+                className="px-2 py-0.5 text-xs bg-theme-accent bg-theme-accent-hover rounded-theme font-tech"
               >
                 Retry
               </button>
               {connectionError && (
-                <span className="text-theme-error text-xs max-w-xs truncate" title={connectionError}>
+                <span className="text-theme-error text-xs max-w-32 truncate font-tech" title={connectionError}>
                   {connectionError}
                 </span>
               )}
@@ -500,61 +608,19 @@ function App() {
           onDropFiles={handleDropOnLocal}
           onRatingChange={handleLocalRatingChange}
           onPlayFile={handlePlayLocalFile}
+          onBulkEdit={handleBulkEditLocal}
           loading={localLoading}
         />
 
-        {/* Center - Sync controls */}
-        <div className="flex flex-col items-center justify-center gap-3 px-6 bg-theme-secondary border-x border-theme min-w-48">
-          <button
-            onClick={handleSync}
-            disabled={!canSync || syncProgress.status === 'syncing'}
-            className={`
-              flex items-center gap-2 px-6 py-3 rounded-theme font-medium transition-all
-              ${canSync && syncProgress.status !== 'syncing'
-                ? 'bg-theme-accent bg-theme-accent-hover text-theme-primary'
-                : 'bg-theme-tertiary text-theme-muted cursor-not-allowed'
-              }
-            `}
-            title="Refresh both sides and sync metadata (newer wins)"
-          >
-            <span className="text-xl">⇄</span>
-            <span>Sync</span>
-          </button>
-
-          {/* Match stats */}
-          {canSync && syncProgress.status === 'idle' && (
-            <div className="text-xs text-theme-muted text-center space-y-1">
-              <div>{matchStats.total} matching songs</div>
-              {matchStats.needsSync > 0 ? (
-                <>
-                  <div className="text-theme-warning">{matchStats.needsSync} may need sync</div>
-                </>
-              ) : matchStats.total > 0 ? (
-                <div className="text-theme-success">All in sync</div>
-              ) : null}
-            </div>
-          )}
-
+        {/* Center divider - thin */}
+        <div className="flex flex-col items-center justify-center w-1 bg-theme-tertiary">
+          {/* Sync status indicator */}
           {syncProgress.status === 'syncing' && (
-            <div className="text-sm text-theme-muted text-center">
-              <div className="truncate max-w-36">{syncProgress.currentFile || 'Refreshing...'}</div>
-              {syncProgress.total > 0 && (
-                <div>{syncProgress.current}/{syncProgress.total}</div>
-              )}
+            <div className="absolute bg-theme-secondary px-2 py-1 rounded text-xs text-theme-muted font-tech whitespace-nowrap z-20">
+              {syncProgress.currentFile || 'Refreshing...'}
+              {syncProgress.total > 0 && ` ${syncProgress.current}/${syncProgress.total}`}
             </div>
           )}
-
-          {syncProgress.status === 'complete' && (
-            <div className="text-sm text-theme-success">Sync complete</div>
-          )}
-
-          {syncProgress.status === 'error' && (
-            <div className="text-sm text-theme-error">Sync failed</div>
-          )}
-
-          <p className="text-xs text-theme-muted text-center max-w-36">
-            Refreshes both sides, then syncs newer metadata
-          </p>
         </div>
 
         {/* Right pane - Android files */}
@@ -566,28 +632,63 @@ function App() {
           onSelectFiles={setSelectedAndroidFiles}
           onPathChange={(path) => {
             setAndroidPath(path);
-            loadAndroidFiles(path);
           }}
           onRefresh={handleRefreshAndroid}
           onDeleteFiles={handleDeleteAndroidFiles}
           onDropFiles={handleDropOnAndroid}
           onRatingChange={handleAndroidRatingChange}
           onPlayFile={handlePlayAndroidFile}
+          onBulkEdit={handleBulkEditAndroid}
           loading={androidLoading}
           isAndroid
           deviceConnected={!!device}
+          error={androidError}
         />
       </div>
 
       {/* Status bar */}
-      <footer className="flex items-center justify-between px-4 py-2 bg-theme-secondary border-t border-theme text-sm text-theme-muted">
+      <footer className="flex items-center justify-between px-3 py-1 bg-theme-secondary border-t border-theme text-xs font-tech text-theme-muted">
         <span>
-          Local: {selectedLocalFiles.size} selected of {localFiles.length} files
+          Local: {selectedLocalFiles.size}/{localFiles.length}
+          {matchStats.total > 0 && syncProgress.status === 'idle' && (
+            <span className="ml-2 text-theme-muted">
+              ({matchStats.total} matches{matchStats.needsSync > 0 && <span className="text-theme-warning"> • {matchStats.needsSync} pending</span>})
+            </span>
+          )}
         </span>
         <span>
-          Android: {selectedAndroidFiles.size} selected of {androidFiles.length} files
+          {syncProgress.status === 'syncing' && (
+            <span className="text-theme-accent mr-2">
+              Syncing: {syncProgress.currentFile || '...'} {syncProgress.total > 0 && `${syncProgress.current}/${syncProgress.total}`}
+            </span>
+          )}
+          {syncProgress.status === 'complete' && (
+            <span className="text-theme-success mr-2">Sync complete</span>
+          )}
+          {syncProgress.status === 'error' && (
+            <span className="text-theme-error mr-2">Sync failed</span>
+          )}
+          Android: {selectedAndroidFiles.size}/{androidFiles.length}
         </span>
       </footer>
+
+      {/* Bulk Edit Modal */}
+      {bulkEditFiles && (
+        <BulkEditModal
+          files={bulkEditFiles}
+          onSave={handleBulkEditSave}
+          onClose={handleBulkEditClose}
+        />
+      )}
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <SettingsModal
+          customHeaderBg={customHeaderBg}
+          onSave={handleSettingsSave}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
     </div>
   );
 }
