@@ -81,6 +81,20 @@ function App() {
     status: 'idle'
   });
 
+  // Undo history for metadata fixes
+  type MetadataUndoEntry = {
+    source: 'local' | 'android';
+    changes: Array<{
+      path: string;
+      original: { title: string; artist: string };
+      fixed: { title: string; artist: string };
+    }>;
+    timestamp: number;
+  };
+  const [undoStack, setUndoStack] = useState<MetadataUndoEntry[]>([]);
+  const [showUndoToast, setShowUndoToast] = useState(false);
+  const [lastFixCount, setLastFixCount] = useState(0);
+
   // Load local files
   const loadLocalFiles = useCallback(async (path: string) => {
     setLocalLoading(true);
@@ -355,6 +369,167 @@ function App() {
     setBulkEditFiles([file]);
     setBulkEditSource(infoSource);
     setInfoFile(null);
+  };
+
+  // Fix metadata from filename - parse "Artist - Title" patterns
+  const parseFilenameForMetadata = (filename: string): { artist?: string; title?: string } | null => {
+    const nameWithoutExt = filename.replace(/\.[^/.]+$/, '');
+    
+    // Clean up YouTube-style suffixes
+    let cleanName = nameWithoutExt
+      .replace(/\s*[\[\(][a-zA-Z0-9_-]{11}[\]\)]\s*$/, '') // Remove [videoId]
+      .replace(/\s*\(Official.*?\)/gi, '')
+      .replace(/\s*\[Official.*?\]/gi, '')
+      .replace(/\s*\(Audio\)/gi, '')
+      .replace(/\s*\(Lyrics\)/gi, '')
+      .replace(/\s*\(Music Video\)/gi, '')
+      .replace(/\s*\(HD\)/gi, '')
+      .replace(/\s*\(HQ\)/gi, '')
+      .replace(/\s*\(Live.*?\)/gi, '')
+      .replace(/\s*\[.*?Remaster.*?\]/gi, '')
+      .trim();
+    
+    // Try "Artist - Title" pattern
+    const dashMatch = cleanName.match(/^(.+?)\s*[-–—]\s*(.+)$/);
+    if (dashMatch) {
+      return { artist: dashMatch[1].trim(), title: dashMatch[2].trim() };
+    }
+    
+    return null;
+  };
+
+  const handleFixMetadataLocal = async (files: MusicFile[]) => {
+    const changes: MetadataUndoEntry['changes'] = [];
+    
+    for (const file of files) {
+      const parsed = parseFilenameForMetadata(file.filename);
+      if (parsed && (parsed.artist || parsed.title)) {
+        changes.push({
+          path: file.path,
+          original: { title: file.title, artist: file.artist },
+          fixed: { title: parsed.title || file.title, artist: parsed.artist || file.artist }
+        });
+      }
+    }
+
+    if (changes.length === 0) {
+      alert('No files could be fixed. Make sure filenames follow "Artist - Title" format.');
+      return;
+    }
+
+    const confirmMsg = `Fix metadata for ${changes.length} file(s)?\n\nExample:\n"${changes[0].original.title}" → "${changes[0].fixed.title}"\nArtist: "${changes[0].fixed.artist}"`;
+    if (!confirm(confirmMsg)) return;
+
+    // Apply changes
+    for (const change of changes) {
+      try {
+        await window.electronAPI.writeLocalMetadata(change.path, {
+          title: change.fixed.title,
+          artist: change.fixed.artist
+        });
+      } catch (error) {
+        console.error('Failed to update:', change.path, error);
+      }
+    }
+
+    // Save to undo stack
+    setUndoStack(prev => [...prev, {
+      source: 'local',
+      changes,
+      timestamp: Date.now()
+    }]);
+    setLastFixCount(changes.length);
+    setShowUndoToast(true);
+    setTimeout(() => setShowUndoToast(false), 8000);
+
+    // Refresh
+    if (localPath) loadLocalFiles(localPath);
+  };
+
+  const handleFixMetadataAndroid = async (files: MusicFile[]) => {
+    const changes: MetadataUndoEntry['changes'] = [];
+    
+    for (const file of files) {
+      const parsed = parseFilenameForMetadata(file.filename);
+      if (parsed && (parsed.artist || parsed.title)) {
+        changes.push({
+          path: file.path,
+          original: { title: file.title, artist: file.artist },
+          fixed: { title: parsed.title || file.title, artist: parsed.artist || file.artist }
+        });
+      }
+    }
+
+    if (changes.length === 0) {
+      alert('No files could be fixed. Make sure filenames follow "Artist - Title" format.');
+      return;
+    }
+
+    const confirmMsg = `Fix metadata for ${changes.length} file(s) on Android?\n\nExample:\n"${changes[0].original.title}" → "${changes[0].fixed.title}"\nArtist: "${changes[0].fixed.artist}"`;
+    if (!confirm(confirmMsg)) return;
+
+    // Apply changes
+    for (const change of changes) {
+      try {
+        await window.electronAPI.updateAndroidMetadata(change.path, {
+          title: change.fixed.title,
+          artist: change.fixed.artist
+        });
+      } catch (error) {
+        console.error('Failed to update:', change.path, error);
+      }
+    }
+
+    // Save to undo stack
+    setUndoStack(prev => [...prev, {
+      source: 'android',
+      changes,
+      timestamp: Date.now()
+    }]);
+    setLastFixCount(changes.length);
+    setShowUndoToast(true);
+    setTimeout(() => setShowUndoToast(false), 8000);
+
+    // Refresh
+    loadAndroidFiles(androidPath);
+  };
+
+  const handleUndoLastFix = async () => {
+    const lastUndo = undoStack[undoStack.length - 1];
+    if (!lastUndo) return;
+
+    const confirmMsg = `Undo metadata changes for ${lastUndo.changes.length} file(s)?`;
+    if (!confirm(confirmMsg)) return;
+
+    // Revert changes
+    for (const change of lastUndo.changes) {
+      try {
+        if (lastUndo.source === 'local') {
+          await window.electronAPI.writeLocalMetadata(change.path, {
+            title: change.original.title,
+            artist: change.original.artist
+          });
+        } else {
+          await window.electronAPI.updateAndroidMetadata(change.path, {
+            title: change.original.title,
+            artist: change.original.artist
+          });
+        }
+      } catch (error) {
+        console.error('Failed to undo:', change.path, error);
+      }
+    }
+
+    // Remove from undo stack
+    setUndoStack(prev => prev.slice(0, -1));
+    setShowUndoToast(false);
+
+    // Refresh
+    if (lastUndo.source === 'local' && localPath) {
+      loadLocalFiles(localPath);
+    } else {
+      loadAndroidFiles(androidPath);
+    }
   };
 
   // Settings handlers
@@ -715,6 +890,7 @@ function App() {
           onPlayFile={handlePlayLocalFile}
           onBulkEdit={handleBulkEditLocal}
           onShowInfo={handleShowInfoLocal}
+          onFixMetadata={handleFixMetadataLocal}
           loading={localLoading}
         />
 
@@ -746,6 +922,7 @@ function App() {
           onPlayFile={handlePlayAndroidFile}
           onBulkEdit={handleBulkEditAndroid}
           onShowInfo={handleShowInfoAndroid}
+          onFixMetadata={handleFixMetadataAndroid}
           loading={androidLoading}
           isAndroid
           deviceConnected={!!device}
@@ -778,6 +955,27 @@ function App() {
           Android: {selectedAndroidFiles.size}/{androidFiles.length}
         </span>
       </footer>
+
+      {/* Undo Toast */}
+      {showUndoToast && undoStack.length > 0 && (
+        <div className="fixed bottom-12 left-1/2 -translate-x-1/2 z-50 animate-fade-in">
+          <div className="flex items-center gap-3 px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg shadow-xl font-tech text-sm">
+            <span className="text-green-400">✓ Fixed {lastFixCount} file(s)</span>
+            <button
+              onClick={handleUndoLastFix}
+              className="px-3 py-1 bg-yellow-600 hover:bg-yellow-500 text-white rounded text-xs font-semibold transition-colors"
+            >
+              Undo
+            </button>
+            <button
+              onClick={() => setShowUndoToast(false)}
+              className="text-gray-500 hover:text-gray-300 text-lg leading-none"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Bulk Edit Modal */}
       {bulkEditFiles && (

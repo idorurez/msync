@@ -12,6 +12,7 @@ interface FileTableProps {
   onPlayFile?: (filePath: string) => void;
   onBulkEdit?: (files: MusicFile[]) => void;
   onShowInfo?: (file: MusicFile) => void;
+  onFixMetadata?: (files: MusicFile[]) => void;
   isDropTarget?: boolean;
 }
 
@@ -35,6 +36,7 @@ export function FileTable({
   onPlayFile,
   onBulkEdit,
   onShowInfo,
+  onFixMetadata,
   isDropTarget = false
 }: FileTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>('title');
@@ -165,6 +167,14 @@ export function FileTable({
     }
     closeContextMenu();
   }, [onShowInfo, contextMenu.filePath, files, closeContextMenu]);
+
+  const handleFixMetadata = useCallback(() => {
+    if (onFixMetadata && selectedFiles.size > 0) {
+      const selectedFileObjects = files.filter(f => selectedFiles.has(f.path));
+      onFixMetadata(selectedFileObjects);
+    }
+    closeContextMenu();
+  }, [onFixMetadata, selectedFiles, files, closeContextMenu]);
 
   const handleSelectAllFromMenu = useCallback(() => {
     onSelectFiles(new Set(files.map(f => f.path)));
@@ -401,6 +411,16 @@ export function FileTable({
                 onClick={handleBulkEdit}
               >
                 Edit Metadata ({selectedFiles.size})
+              </button>
+            </>
+          )}
+          {onFixMetadata && selectedFiles.size > 0 && (
+            <>
+              <button
+                className="w-full px-2 py-1 text-left hover:bg-gray-700 text-green-400 flex items-center gap-1"
+                onClick={handleFixMetadata}
+              >
+                🔧 Fix from Filename ({selectedFiles.size})
               </button>
             </>
           )}

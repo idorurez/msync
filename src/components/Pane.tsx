@@ -18,6 +18,7 @@ interface PaneProps {
   onPlayFile?: (filePath: string) => void;
   onBulkEdit?: (files: MusicFile[]) => void;
   onShowInfo?: (file: MusicFile) => void;
+  onFixMetadata?: (files: MusicFile[]) => void;
   loading: boolean;
   isAndroid?: boolean;
   deviceConnected?: boolean;
@@ -39,6 +40,7 @@ export function Pane({
   onPlayFile,
   onBulkEdit,
   onShowInfo,
+  onFixMetadata,
   loading,
   isAndroid = false,
   deviceConnected = true,
@@ -190,6 +192,7 @@ export function Pane({
               onPlayFile={onPlayFile}
               onBulkEdit={onBulkEdit}
               onShowInfo={onShowInfo}
+              onFixMetadata={onFixMetadata}
               isDropTarget={!!onDropFiles}
             />
 
