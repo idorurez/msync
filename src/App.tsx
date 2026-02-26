@@ -3,6 +3,7 @@ import { Pane } from './components/Pane';
 import { ThemeSelector } from './components/ThemeSelector';
 import { BulkEditModal } from './components/BulkEditModal';
 import { SettingsModal } from './components/SettingsModal';
+import { InfoPanel } from './components/InfoPanel';
 import type { MusicFile, DeviceInfo, SyncProgress } from './types';
 
 const STORAGE_KEY = 'msync_settings';
@@ -59,6 +60,10 @@ function App() {
 
   // Settings modal state
   const [showSettings, setShowSettings] = useState(false);
+
+  // Info panel state
+  const [infoFile, setInfoFile] = useState<MusicFile | null>(null);
+  const [infoSource, setInfoSource] = useState<'local' | 'android'>('local');
 
   // Sync state
   const [syncProgress, setSyncProgress] = useState<SyncProgress>({
@@ -300,6 +305,28 @@ function App() {
   const handleBulkEditClose = () => {
     setBulkEditFiles(null);
     setBulkEditSource(null);
+  };
+
+  // Info panel handlers
+  const handleShowInfoLocal = (file: MusicFile) => {
+    setInfoFile(file);
+    setInfoSource('local');
+  };
+
+  const handleShowInfoAndroid = (file: MusicFile) => {
+    setInfoFile(file);
+    setInfoSource('android');
+  };
+
+  const handleCloseInfo = () => {
+    setInfoFile(null);
+  };
+
+  const handleInfoMetadataEdit = (file: MusicFile) => {
+    // Open bulk edit modal for single file
+    setBulkEditFiles([file]);
+    setBulkEditSource(infoSource);
+    setInfoFile(null);
   };
 
   // Settings handlers
@@ -633,6 +660,7 @@ function App() {
           onRatingChange={handleLocalRatingChange}
           onPlayFile={handlePlayLocalFile}
           onBulkEdit={handleBulkEditLocal}
+          onShowInfo={handleShowInfoLocal}
           loading={localLoading}
         />
 
@@ -663,6 +691,7 @@ function App() {
           onRatingChange={handleAndroidRatingChange}
           onPlayFile={handlePlayAndroidFile}
           onBulkEdit={handleBulkEditAndroid}
+          onShowInfo={handleShowInfoAndroid}
           loading={androidLoading}
           isAndroid
           deviceConnected={!!device}
@@ -713,6 +742,15 @@ function App() {
           onClose={() => setShowSettings(false)}
         />
       )}
+
+      {/* Info Panel */}
+      <InfoPanel
+        file={infoFile}
+        source={infoSource}
+        onClose={handleCloseInfo}
+        onRatingChange={infoSource === 'local' ? handleLocalRatingChange : handleAndroidRatingChange}
+        onMetadataEdit={handleInfoMetadataEdit}
+      />
     </div>
   );
 }

@@ -11,6 +11,7 @@ interface FileTableProps {
   onRatingChange?: (filePath: string, rating: number) => void;
   onPlayFile?: (filePath: string) => void;
   onBulkEdit?: (files: MusicFile[]) => void;
+  onShowInfo?: (file: MusicFile) => void;
   isDropTarget?: boolean;
 }
 
@@ -33,6 +34,7 @@ export function FileTable({
   onRatingChange,
   onPlayFile,
   onBulkEdit,
+  onShowInfo,
   isDropTarget = false
 }: FileTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>('title');
@@ -153,6 +155,16 @@ export function FileTable({
     }
     closeContextMenu();
   }, [onBulkEdit, selectedFiles, files, closeContextMenu]);
+
+  const handleShowInfo = useCallback(() => {
+    if (onShowInfo && contextMenu.filePath) {
+      const file = files.find(f => f.path === contextMenu.filePath);
+      if (file) {
+        onShowInfo(file);
+      }
+    }
+    closeContextMenu();
+  }, [onShowInfo, contextMenu.filePath, files, closeContextMenu]);
 
   const handleSelectAllFromMenu = useCallback(() => {
     onSelectFiles(new Set(files.map(f => f.path)));
@@ -370,6 +382,17 @@ export function FileTable({
           >
             Deselect All
           </button>
+          {onShowInfo && (
+            <>
+              <div className="border-t border-gray-700 my-0.5"></div>
+              <button
+                className="w-full px-2 py-1 text-left hover:bg-gray-700 text-blue-400 flex items-center gap-1"
+                onClick={handleShowInfo}
+              >
+                ℹ️ Show Info
+              </button>
+            </>
+          )}
           {onBulkEdit && selectedFiles.size > 0 && (
             <>
               <div className="border-t border-gray-700 my-0.5"></div>

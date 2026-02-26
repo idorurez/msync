@@ -17,6 +17,7 @@ interface PaneProps {
   onRatingChange?: (filePath: string, rating: number) => void;
   onPlayFile?: (filePath: string) => void;
   onBulkEdit?: (files: MusicFile[]) => void;
+  onShowInfo?: (file: MusicFile) => void;
   loading: boolean;
   isAndroid?: boolean;
   deviceConnected?: boolean;
@@ -37,6 +38,7 @@ export function Pane({
   onRatingChange,
   onPlayFile,
   onBulkEdit,
+  onShowInfo,
   loading,
   isAndroid = false,
   deviceConnected = true,
@@ -187,6 +189,7 @@ export function Pane({
               onRatingChange={onRatingChange}
               onPlayFile={onPlayFile}
               onBulkEdit={onBulkEdit}
+              onShowInfo={onShowInfo}
               isDropTarget={!!onDropFiles}
             />
 
