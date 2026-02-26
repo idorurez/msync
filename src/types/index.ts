@@ -80,6 +80,13 @@ export interface ElectronAPI {
     direction: SyncDirection
   ) => Promise<void>;
 
+  // yt-dlp operations
+  downloadWithYtdlp: (
+    url: string,
+    outputPath: string,
+    ytdlpPath: string
+  ) => Promise<{ success: boolean; fileCount?: number; error?: string }>;
+
   // Events
   onDeviceConnected: (callback: (device: DeviceInfo) => void) => void;
   onDeviceDisconnected: (callback: () => void) => void;

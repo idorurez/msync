@@ -4,6 +4,7 @@ import { ThemeSelector } from './components/ThemeSelector';
 import { BulkEditModal } from './components/BulkEditModal';
 import { SettingsModal } from './components/SettingsModal';
 import { InfoPanel } from './components/InfoPanel';
+import { DownloadModal } from './components/DownloadModal';
 import type { MusicFile, DeviceInfo, SyncProgress } from './types';
 
 const STORAGE_KEY = 'msync_settings';
@@ -64,6 +65,9 @@ function App() {
 
   // Settings modal state
   const [showSettings, setShowSettings] = useState(false);
+
+  // Download modal state
+  const [showDownload, setShowDownload] = useState(false);
 
   // Info panel state
   const [infoFile, setInfoFile] = useState<MusicFile | null>(null);
@@ -610,6 +614,23 @@ function App() {
             <span>{syncProgress.status === 'syncing' ? 'Syncing...' : 'Sync Metadata'}</span>
           </button>
 
+          {/* Download button */}
+          <button
+            onClick={() => setShowDownload(true)}
+            disabled={!localPath}
+            className={`
+              flex items-center gap-1.5 px-3 py-1.5 rounded-theme font-tech font-semibold text-sm transition-all
+              ${localPath
+                ? 'bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white shadow-lg'
+                : 'bg-theme-tertiary text-theme-muted cursor-not-allowed'
+              }
+            `}
+            title={localPath ? 'Download from YouTube' : 'Select a local folder first'}
+          >
+            <span className="text-base">📥</span>
+            <span>YouTube</span>
+          </button>
+
           <button
             onClick={() => setShowSettings(true)}
             className="px-2 py-1 text-xs bg-theme-tertiary hover:bg-theme-hover rounded-theme font-tech transition-colors"
@@ -757,6 +778,19 @@ function App() {
         onRatingChange={infoSource === 'local' ? handleLocalRatingChange : handleAndroidRatingChange}
         onMetadataEdit={handleInfoMetadataEdit}
       />
+
+      {/* Download Modal */}
+      {showDownload && localPath && (
+        <DownloadModal
+          ytdlpPath={ytdlpPath || ''}
+          outputPath={localPath}
+          onClose={() => setShowDownload(false)}
+          onDownloadComplete={() => {
+            // Refresh local files after download
+            loadLocalFiles(localPath);
+          }}
+        />
+      )}
     </div>
   );
 }

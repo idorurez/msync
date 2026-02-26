@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import { spawn } from 'child_process';
 import { scanFolder, getFolderTree, readMetadata, writeMetadata } from './metadata';
 import { AdbManager } from './adb';
 import type { MusicFile, SyncDirection } from '../src/types';
@@ -264,5 +265,67 @@ ipcMain.handle('sync-metadata', async (
     total,
     currentFile: '',
     status: 'complete'
+  });
+});
+
+// IPC Handler - yt-dlp download
+ipcMain.handle('download-with-ytdlp', async (_, url: string, outputPath: string, ytdlpPath: string) => {
+  return new Promise((resolve) => {
+    // Build yt-dlp arguments for highest quality audio
+    const args = [
+      url,
+      '--extract-audio',
+      '--audio-format', 'mp3',
+      '--audio-quality', '0', // Best quality
+      '--embed-thumbnail',
+      '--add-metadata',
+      '--parse-metadata', 'title:%(title)s',
+      '--parse-metadata', 'uploader:%(artist)s',
+      '-o', path.join(outputPath, '%(title)s.%(ext)s'),
+      '--no-playlist', // Only download single video by default
+    ];
+
+    // If URL looks like a playlist, enable playlist download
+    if (url.includes('playlist') || url.includes('list=')) {
+      const playlistIndex = args.indexOf('--no-playlist');
+      if (playlistIndex > -1) {
+        args.splice(playlistIndex, 1);
+      }
+      args.push('--yes-playlist');
+    }
+
+    let fileCount = 0;
+    let lastError = '';
+
+    const process = spawn(ytdlpPath, args, {
+      windowsHide: true,
+    });
+
+    process.stdout.on('data', (data: Buffer) => {
+      const output = data.toString();
+      // Count downloaded files
+      if (output.includes('[download] Destination:') || output.includes('[ExtractAudio] Destination:')) {
+        fileCount++;
+      }
+      // Send progress updates
+      mainWindow?.webContents.send('ytdlp-progress', { message: output.trim() });
+    });
+
+    process.stderr.on('data', (data: Buffer) => {
+      lastError = data.toString();
+      mainWindow?.webContents.send('ytdlp-progress', { message: lastError.trim(), isError: true });
+    });
+
+    process.on('close', (code) => {
+      if (code === 0) {
+        resolve({ success: true, fileCount: Math.max(1, fileCount) });
+      } else {
+        resolve({ success: false, error: lastError || `yt-dlp exited with code ${code}` });
+      }
+    });
+
+    process.on('error', (err) => {
+      resolve({ success: false, error: `Failed to start yt-dlp: ${err.message}` });
+    });
   });
 });

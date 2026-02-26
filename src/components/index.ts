@@ -4,3 +4,4 @@ export { FolderTree } from './FolderTree';
 export { RatingStars } from './RatingStars';
 export { BulkEditModal } from './BulkEditModal';
 export { InfoPanel } from './InfoPanel';
+export { DownloadModal } from './DownloadModal';

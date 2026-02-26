@@ -70,6 +70,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   ): Promise<void> =>
     ipcRenderer.invoke('sync-metadata', sourceFiles, targetFiles, direction),
 
+  // yt-dlp operations
+  downloadWithYtdlp: (
+    url: string,
+    outputPath: string,
+    ytdlpPath: string
+  ): Promise<{ success: boolean; fileCount?: number; error?: string }> =>
+    ipcRenderer.invoke('download-with-ytdlp', url, outputPath, ytdlpPath),
+
   // Events
   onDeviceConnected: (callback: (device: DeviceInfo) => void): void => {
     ipcRenderer.on('device-connected', (_, device) => callback(device));
