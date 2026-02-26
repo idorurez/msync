@@ -10,7 +10,10 @@
     "dist-electron/**/*"
   ],
   "win": {
-    "target": ["nsis", "portable"]
+    "target": ["nsis", "portable"],
+    "sign": null,
+    "signingHashAlgorithms": null,
+    "signDlls": false
   },
   "mac": {
     "target": ["dmg"]
