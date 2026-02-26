@@ -485,16 +485,40 @@ function App() {
       }
     }
 
+    // Final refresh to show updated state (keep syncing status until done)
+    setSyncProgress({
+      current: total,
+      total,
+      currentFile: 'Refreshing...',
+      status: 'syncing'
+    });
+
+    // Await the refresh so matchStats recalculates with fresh data
+    const refreshPromises: Promise<void>[] = [];
+    if (localPath) {
+      refreshPromises.push(
+        window.electronAPI.scanLocalFolder(localPath).then(files => {
+          setLocalFiles(files);
+          setSelectedLocalFiles(new Set());
+        })
+      );
+    }
+    if (deviceRef.current) {
+      refreshPromises.push(
+        window.electronAPI.scanAndroidFolder(androidPath).then(files => {
+          setAndroidFiles(files);
+          setSelectedAndroidFiles(new Set());
+        })
+      );
+    }
+    await Promise.all(refreshPromises);
+
     setSyncProgress({
       current: total,
       total,
       currentFile: '',
       status: 'complete'
     });
-
-    // Final refresh to show updated state
-    if (localPath) loadLocalFiles(localPath);
-    loadAndroidFiles(androidPath);
   };
 
   // Calculate matching stats for UI
