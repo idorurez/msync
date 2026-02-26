@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react';
 
 interface SettingsModalProps {
   customHeaderBg?: string;
-  onSave: (settings: { customHeaderBg?: string }) => void;
+  ytdlpPath?: string;
+  onSave: (settings: { customHeaderBg?: string; ytdlpPath?: string }) => void;
   onClose: () => void;
 }
 
-export function SettingsModal({ customHeaderBg, onSave, onClose }: SettingsModalProps) {
+export function SettingsModal({ customHeaderBg, ytdlpPath, onSave, onClose }: SettingsModalProps) {
   const [headerBg, setHeaderBg] = useState(customHeaderBg || '');
+  const [ytdlp, setYtdlp] = useState(ytdlpPath || '');
   const [availableImages, setAvailableImages] = useState<Array<{ name: string; path: string }>>([]);
   const [imgFolderPath, setImgFolderPath] = useState('');
 
@@ -50,7 +52,8 @@ export function SettingsModal({ customHeaderBg, onSave, onClose }: SettingsModal
 
   const handleSave = () => {
     onSave({
-      customHeaderBg: headerBg || undefined
+      customHeaderBg: headerBg || undefined,
+      ytdlpPath: ytdlp || undefined
     });
     onClose();
   };
@@ -165,6 +168,39 @@ export function SettingsModal({ customHeaderBg, onSave, onClose }: SettingsModal
             <p className="text-[10px] text-theme-muted">
               Tip: Place images in the "img" folder next to the app.
               {imgFolderPath && <span className="block mt-0.5 opacity-70">Path: {imgFolderPath}</span>}
+            </p>
+          </div>
+
+          {/* Divider */}
+          <hr className="border-theme" />
+
+          {/* yt-dlp Path */}
+          <div className="space-y-2">
+            <label className="text-xs text-theme-secondary uppercase tracking-wide block">
+              yt-dlp Path
+            </label>
+            <p className="text-[10px] text-theme-muted">
+              Path to yt-dlp executable for downloading from YouTube. Required for YouTube download features.
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={ytdlp}
+                onChange={(e) => setYtdlp(e.target.value)}
+                placeholder="C:\path\to\yt-dlp.exe"
+                className="flex-1 px-2 py-1.5 text-xs bg-theme-primary border border-theme rounded-theme text-theme-primary font-mono"
+              />
+            </div>
+            {ytdlp && (
+              <button
+                onClick={() => setYtdlp('')}
+                className="text-xs text-red-400 hover:text-red-300"
+              >
+                × Clear path
+              </button>
+            )}
+            <p className="text-[10px] text-theme-muted">
+              Download yt-dlp from: <a href="https://github.com/yt-dlp/yt-dlp/releases" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">github.com/yt-dlp/yt-dlp</a>
             </p>
           </div>
         </div>

@@ -12,6 +12,7 @@ interface AppSettings {
   localPath: string | null;
   androidPath: string;
   customHeaderBg?: string;
+  ytdlpPath?: string;
 }
 
 function loadSettings(): AppSettings {
@@ -53,6 +54,9 @@ function App() {
 
   // Custom header settings
   const [customHeaderBg, setCustomHeaderBg] = useState<string | undefined>(settings.current.customHeaderBg);
+
+  // yt-dlp settings
+  const [ytdlpPath, setYtdlpPath] = useState<string | undefined>(settings.current.ytdlpPath);
 
   // Bulk edit modal state
   const [bulkEditFiles, setBulkEditFiles] = useState<MusicFile[] | null>(null);
@@ -152,8 +156,8 @@ function App() {
 
   // Save settings when paths change
   useEffect(() => {
-    saveSettings({ localPath, androidPath, customHeaderBg });
-  }, [localPath, androidPath, customHeaderBg]);
+    saveSettings({ localPath, androidPath, customHeaderBg, ytdlpPath });
+  }, [localPath, androidPath, customHeaderBg, ytdlpPath]);
 
   const handleRetryConnect = async () => {
     setConnectionError(null);
@@ -330,8 +334,9 @@ function App() {
   };
 
   // Settings handlers
-  const handleSettingsSave = (newSettings: { customHeaderBg?: string }) => {
+  const handleSettingsSave = (newSettings: { customHeaderBg?: string; ytdlpPath?: string }) => {
     setCustomHeaderBg(newSettings.customHeaderBg);
+    setYtdlpPath(newSettings.ytdlpPath);
   };
 
   // Drop handlers
@@ -738,6 +743,7 @@ function App() {
       {showSettings && (
         <SettingsModal
           customHeaderBg={customHeaderBg}
+          ytdlpPath={ytdlpPath}
           onSave={handleSettingsSave}
           onClose={() => setShowSettings(false)}
         />
