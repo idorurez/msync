@@ -326,9 +326,29 @@ function App() {
     setInfoSource('android');
   };
 
-  const handleCloseInfo = () => {
-    setInfoFile(null);
-  };
+  // No longer needed - kept handlers for context menu "Show Info" option
+  // Update info panel when selection changes
+  useEffect(() => {
+    // Prefer local selection, then android
+    if (selectedLocalFiles.size === 1) {
+      const selectedPath = Array.from(selectedLocalFiles)[0];
+      const file = localFiles.find(f => f.path === selectedPath);
+      if (file) {
+        setInfoFile(file);
+        setInfoSource('local');
+      }
+    } else if (selectedAndroidFiles.size === 1) {
+      const selectedPath = Array.from(selectedAndroidFiles)[0];
+      const file = androidFiles.find(f => f.path === selectedPath);
+      if (file) {
+        setInfoFile(file);
+        setInfoSource('android');
+      }
+    } else if (selectedLocalFiles.size === 0 && selectedAndroidFiles.size === 0) {
+      setInfoFile(null);
+    }
+    // If multiple files selected, keep showing the last single selection or clear
+  }, [selectedLocalFiles, selectedAndroidFiles, localFiles, androidFiles]);
 
   const handleInfoMetadataEdit = (file: MusicFile) => {
     // Open bulk edit modal for single file
@@ -668,7 +688,15 @@ function App() {
 
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left pane - Local files */}
+        {/* Info Panel - Left sidebar */}
+        <InfoPanel
+          file={infoFile}
+          source={infoSource}
+          onRatingChange={infoSource === 'local' ? handleLocalRatingChange : handleAndroidRatingChange}
+          onMetadataEdit={handleInfoMetadataEdit}
+        />
+
+        {/* Local files pane */}
         <Pane
           title="Source (Local)"
           path={localPath}
@@ -769,15 +797,6 @@ function App() {
           onClose={() => setShowSettings(false)}
         />
       )}
-
-      {/* Info Panel */}
-      <InfoPanel
-        file={infoFile}
-        source={infoSource}
-        onClose={handleCloseInfo}
-        onRatingChange={infoSource === 'local' ? handleLocalRatingChange : handleAndroidRatingChange}
-        onMetadataEdit={handleInfoMetadataEdit}
-      />
 
       {/* Download Modal */}
       {showDownload && localPath && (
