@@ -1,6 +1,7 @@
 {
   "appId": "com.msync.app",
   "productName": "msync",
+  "artifactName": "${name}.${ext}",
   "directories": {
     "buildResources": "build",
     "output": "release"
@@ -14,6 +15,12 @@
     "sign": null,
     "signingHashAlgorithms": null,
     "signDlls": false
+  },
+  "nsis": {
+    "artifactName": "${name}-setup.${ext}"
+  },
+  "portable": {
+    "artifactName": "${name}.${ext}"
   },
   "mac": {
     "target": ["dmg"]
