@@ -142,6 +142,10 @@ export function InfoPanel({ file, source, onRatingChange, onMetadataEdit }: Info
                 <p className="text-theme-primary uppercase">{file.format}</p>
               </div>
               <div>
+                <label className="text-[10px] text-theme-muted font-tech uppercase">Bitrate</label>
+                <p className="text-theme-primary">{file.bitrate ? `${file.bitrate} kbps` : '—'}</p>
+              </div>
+              <div>
                 <label className="text-[10px] text-theme-muted font-tech uppercase">Size</label>
                 <p className="text-theme-primary">{formatFileSize(file.size)}</p>
               </div>

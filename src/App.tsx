@@ -1,10 +1,13 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Pane } from './components/Pane';
+import { LocalPane } from './components/LocalPane';
 import { ThemeSelector } from './components/ThemeSelector';
 import { BulkEditModal } from './components/BulkEditModal';
 import { SettingsModal } from './components/SettingsModal';
 import { InfoPanel } from './components/InfoPanel';
 import { DownloadModal } from './components/DownloadModal';
+import { AlbumArtModal } from './components/AlbumArtModal';
+import msyncLogoUrl from './assets/msync_logo.png';
 import type { MusicFile, DeviceInfo, SyncProgress } from './types';
 
 const STORAGE_KEY = 'msync_settings';
@@ -12,8 +15,8 @@ const STORAGE_KEY = 'msync_settings';
 interface AppSettings {
   localPath: string | null;
   androidPath: string;
-  customHeaderBg?: string;
   ytdlpPath?: string;
+  ffmpegPath?: string;
 }
 
 function loadSettings(): AppSettings {
@@ -53,11 +56,43 @@ function App() {
   const [androidLoading, setAndroidLoading] = useState(false);
   const [androidError, setAndroidError] = useState<string | null>(null);
 
-  // Custom header settings
-  const [customHeaderBg, setCustomHeaderBg] = useState<string | undefined>(settings.current.customHeaderBg);
-
-  // yt-dlp settings
+  // yt-dlp / ffmpeg settings
   const [ytdlpPath, setYtdlpPath] = useState<string | undefined>(settings.current.ytdlpPath);
+  const [ffmpegPath, setFfmpegPath] = useState<string | undefined>(settings.current.ffmpegPath);
+
+  // Processed logo URL (checkerboard background stripped via canvas)
+  const [processedLogoUrl, setProcessedLogoUrl] = useState<string>(msyncLogoUrl);
+  useEffect(() => {
+    const img = new window.Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
+        if (a < 10) continue; // already transparent
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const sat = max > 0 ? (max - min) / max : 0;
+        const warmBias = r - b; // gold has high R, low B → large positive warm bias
+        // Remove achromatic (gray/white) pixels. Preserve warm-tinted edge pixels
+        // that are part of the gold calligraphy anti-aliasing.
+        if (sat < 0.15 && warmBias < 20 && max > 40) {
+          data[i + 3] = 0;
+        }
+      }
+      ctx.putImageData(imageData, 0, 0);
+      canvas.toBlob(blob => {
+        if (blob) setProcessedLogoUrl(URL.createObjectURL(blob));
+      }, 'image/png');
+    };
+    img.src = msyncLogoUrl;
+  }, []);
 
   // Bulk edit modal state
   const [bulkEditFiles, setBulkEditFiles] = useState<MusicFile[] | null>(null);
@@ -95,16 +130,28 @@ function App() {
   const [showUndoToast, setShowUndoToast] = useState(false);
   const [lastFixCount, setLastFixCount] = useState(0);
 
-  // Load local files
+  // Album art state
+  const [showAlbumArt, setShowAlbumArt] = useState(false);
+  const [albumArtFiles, setAlbumArtFiles] = useState<MusicFile[]>([]);
+  const [albumArtSource, setAlbumArtSource] = useState<'local' | 'android'>('local');
+
+  // Load local files (uses incremental scan with DB cache)
   const loadLocalFiles = useCallback(async (path: string) => {
     setLocalLoading(true);
     setSyncProgress({ current: 0, total: 0, currentFile: '', status: 'idle' });
     try {
-      const files = await window.electronAPI.scanLocalFolder(path);
+      const files = await window.electronAPI.scanLocalFolderIncremental(path);
       setLocalFiles(files);
       setSelectedLocalFiles(new Set());
     } catch {
-      // Load failed
+      // Load failed, fall back to regular scan
+      try {
+        const files = await window.electronAPI.scanLocalFolder(path);
+        setLocalFiles(files);
+        setSelectedLocalFiles(new Set());
+      } catch {
+        // Both failed
+      }
     } finally {
       setLocalLoading(false);
     }
@@ -174,8 +221,8 @@ function App() {
 
   // Save settings when paths change
   useEffect(() => {
-    saveSettings({ localPath, androidPath, customHeaderBg, ytdlpPath });
-  }, [localPath, androidPath, customHeaderBg, ytdlpPath]);
+    saveSettings({ localPath, androidPath, ytdlpPath, ffmpegPath });
+  }, [localPath, androidPath, ytdlpPath, ffmpegPath]);
 
   const handleRetryConnect = async () => {
     setConnectionError(null);
@@ -211,6 +258,25 @@ function App() {
     loadAndroidFiles(androidPath);
   };
 
+  // Rename handlers
+  const handleRenameLocalFile = async (filePath: string, newFilename: string) => {
+    try {
+      await window.electronAPI.renameLocalFile(filePath, newFilename);
+      if (localPath) loadLocalFiles(localPath);
+    } catch (error) {
+      alert('Error renaming file: ' + error);
+    }
+  };
+
+  const handleRenameAndroidFile = async (filePath: string, newFilename: string) => {
+    try {
+      await window.electronAPI.renameAndroidFile(filePath, newFilename);
+      loadAndroidFiles(androidPath);
+    } catch (error) {
+      alert('Error renaming file: ' + error);
+    }
+  };
+
   // Delete handlers
   const handleDeleteLocalFiles = async (paths: string[]) => {
     if (!confirm(`Delete ${paths.length} file(s) permanently?`)) return;
@@ -231,6 +297,17 @@ function App() {
       loadAndroidFiles(androidPath);
     } catch (error) {
       alert('Error deleting files: ' + error);
+    }
+  };
+
+  // Move files handler
+  const handleMoveLocalFiles = async (filePaths: string[], targetDir: string) => {
+    try {
+      await window.electronAPI.moveLocalFiles(filePaths, targetDir);
+      setSelectedLocalFiles(new Set());
+      if (localPath) loadLocalFiles(localPath);
+    } catch (error) {
+      alert('Error moving files: ' + error);
     }
   };
 
@@ -428,7 +505,8 @@ function App() {
           artist: change.fixed.artist
         });
       } catch (error) {
-        console.error('Failed to update:', change.path, error);
+        alert(`Failed to update ${change.path}:\n${error}`);
+        return;
       }
     }
 
@@ -476,7 +554,8 @@ function App() {
           artist: change.fixed.artist
         });
       } catch (error) {
-        console.error('Failed to update:', change.path, error);
+        alert(`Failed to update ${change.path}:\n${error}`);
+        return;
       }
     }
 
@@ -533,9 +612,25 @@ function App() {
   };
 
   // Settings handlers
-  const handleSettingsSave = (newSettings: { customHeaderBg?: string; ytdlpPath?: string }) => {
-    setCustomHeaderBg(newSettings.customHeaderBg);
+  const handleSettingsSave = (newSettings: {
+    ytdlpPath?: string;
+    ffmpegPath?: string;
+  }) => {
     setYtdlpPath(newSettings.ytdlpPath);
+    setFfmpegPath(newSettings.ffmpegPath);
+  };
+
+  // Album art handlers
+  const handleAlbumArtLocal = (files: MusicFile[]) => {
+    setAlbumArtFiles(files);
+    setAlbumArtSource('local');
+    setShowAlbumArt(true);
+  };
+
+  const handleAlbumArtAndroid = (files: MusicFile[]) => {
+    setAlbumArtFiles(files);
+    setAlbumArtSource('android');
+    setShowAlbumArt(true);
   };
 
   // Drop handlers
@@ -544,11 +639,31 @@ function App() {
       alert('No Android device connected');
       return;
     }
-    setSelectedLocalFiles(new Set(droppedFiles.map(f => f.path)));
+    for (const file of droppedFiles) {
+      const destPath = androidPath.replace(/\/+$/, '') + '/' + file.filename;
+      try {
+        await window.electronAPI.pushFile(file.path, destPath);
+      } catch (error) {
+        alert(`Error copying ${file.filename}: ${error}`);
+        return;
+      }
+    }
+    loadAndroidFiles(androidPath);
   };
 
   const handleDropOnLocal = async (droppedFiles: MusicFile[]) => {
-    setSelectedAndroidFiles(new Set(droppedFiles.map(f => f.path)));
+    if (!localPath) return;
+    const sep = localPath.includes('\\') ? '\\' : '/';
+    for (const file of droppedFiles) {
+      const destPath = localPath.replace(/[/\\]+$/, '') + sep + file.filename;
+      try {
+        await window.electronAPI.pullFile(file.path, destPath);
+      } catch (error) {
+        alert(`Error copying ${file.filename}: ${error}`);
+        return;
+      }
+    }
+    loadLocalFiles(localPath);
   };
 
   // Find matching songs between local and Android by filename
@@ -593,14 +708,12 @@ function App() {
     setSyncProgress({ current: 0, total: 0, currentFile: 'Refreshing...', status: 'syncing' });
 
     try {
-      // Refresh local files
       let freshLocalFiles: MusicFile[] = [];
       if (localPath) {
         freshLocalFiles = await window.electronAPI.scanLocalFolder(localPath);
         setLocalFiles(freshLocalFiles);
       }
 
-      // Refresh Android files
       let freshAndroidFiles: MusicFile[] = [];
       if (deviceRef.current) {
         freshAndroidFiles = await window.electronAPI.scanAndroidFolder(androidPath);
@@ -768,28 +881,27 @@ function App() {
   }, [findMatchingSongs, localFiles.length, androidFiles.length]);
 
   const canSync = device && localFiles.length > 0 && androidFiles.length > 0;
+  const hasPendingSync = !!(canSync && matchStats.needsSync > 0 && syncProgress.status === 'idle');
 
   return (
     <div className="h-screen flex flex-col bg-theme-primary text-theme-primary">
       {/* Header */}
-      <header className={`flex items-center justify-between px-4 py-2 header-floral border-b border-theme relative z-10 ${customHeaderBg ? 'has-custom-bg' : ''}`}>
-        {customHeaderBg && (
-          <>
-            <div
-              className="header-bg-image"
-              style={{
-                backgroundImage: `url(${customHeaderBg.startsWith('http') ? customHeaderBg : `file:///${customHeaderBg.replace(/\\/g, '/')}`})`
-              }}
-            />
-            <div className="header-bg-overlay" />
-          </>
-        )}
-        <h1
-          className="text-3xl font-fancy text-white drop-shadow-lg tracking-wide relative z-10"
-          style={{ textShadow: '0 0 20px rgba(167,139,250,0.5)' }}
-        >
-          msync
-        </h1>
+      <header className="flex items-center justify-between px-4 py-2 header-floral border-b border-theme relative z-10">
+        <img
+          src={processedLogoUrl}
+          alt="msync"
+          className="absolute pointer-events-none select-none"
+          style={{
+            width: '18%',
+            height: 'auto',
+            top: '50%',
+            left: 0,
+            transform: 'translateY(-50%)',
+            opacity: 0.9,
+          }}
+        />
+        {/* Flex spacer - keeps buttons on the right */}
+        <div className="flex-1 relative z-10" />
 
         <div className="flex items-center gap-3 relative z-10">
           {/* Sync button in header */}
@@ -797,16 +909,31 @@ function App() {
             onClick={handleSync}
             disabled={!canSync || syncProgress.status === 'syncing'}
             className={`
-              flex items-center gap-1.5 px-4 py-1.5 rounded-theme font-tech font-semibold text-sm transition-all
+              relative flex items-center gap-1.5 px-4 py-1.5 rounded-theme font-tech font-semibold text-sm transition-all
               ${canSync && syncProgress.status !== 'syncing'
-                ? 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white shadow-lg'
+                ? hasPendingSync
+                  ? 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 text-white shadow-[0_0_18px_rgba(167,139,250,0.7)] ring-2 ring-purple-300 ring-offset-1 ring-offset-transparent'
+                  : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white shadow-lg'
                 : 'bg-theme-tertiary text-theme-muted cursor-not-allowed'
               }
             `}
             title="Sync metadata between local and Android (newer wins)"
           >
+            {hasPendingSync && (
+              <span className="absolute -top-1.5 -right-1.5 flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-yellow-400"></span>
+              </span>
+            )}
             <span className="text-base">⇄</span>
-            <span>{syncProgress.status === 'syncing' ? 'Syncing...' : 'Sync Metadata'}</span>
+            <span>
+              {syncProgress.status === 'syncing'
+                ? 'Syncing...'
+                : hasPendingSync
+                  ? `Sync (${matchStats.needsSync})`
+                  : 'Sync Metadata'
+              }
+            </span>
           </button>
 
           {/* Download button */}
@@ -861,8 +988,8 @@ function App() {
         </div>
       </header>
 
-      {/* Main content */}
-      <div className="flex-1 flex overflow-hidden">
+      {/* Main content - z-[11] ensures panels paint over any logo overflow from the header */}
+      <div className="flex-1 flex overflow-hidden relative z-[11]">
         {/* Info Panel - Left sidebar */}
         <InfoPanel
           file={infoFile}
@@ -872,17 +999,12 @@ function App() {
         />
 
         {/* Local files pane */}
-        <Pane
-          title="Source (Local)"
+        <LocalPane
           path={localPath}
           files={localFiles}
           selectedFiles={selectedLocalFiles}
           onSelectFiles={setSelectedLocalFiles}
           onSelectFolder={handleSelectLocalFolder}
-          onPathChange={(path) => {
-            setLocalPath(path);
-            loadLocalFiles(path);
-          }}
           onRefresh={handleRefreshLocal}
           onDeleteFiles={handleDeleteLocalFiles}
           onDropFiles={handleDropOnLocal}
@@ -891,6 +1013,9 @@ function App() {
           onBulkEdit={handleBulkEditLocal}
           onShowInfo={handleShowInfoLocal}
           onFixMetadata={handleFixMetadataLocal}
+          onFetchAlbumArt={handleAlbumArtLocal}
+          onRenameFile={handleRenameLocalFile}
+          onMoveFiles={handleMoveLocalFiles}
           loading={localLoading}
         />
 
@@ -923,6 +1048,8 @@ function App() {
           onBulkEdit={handleBulkEditAndroid}
           onShowInfo={handleShowInfoAndroid}
           onFixMetadata={handleFixMetadataAndroid}
+          onFetchAlbumArt={handleAlbumArtAndroid}
+          onRenameFile={handleRenameAndroidFile}
           loading={androidLoading}
           isAndroid
           deviceConnected={!!device}
@@ -989,10 +1116,20 @@ function App() {
       {/* Settings Modal */}
       {showSettings && (
         <SettingsModal
-          customHeaderBg={customHeaderBg}
           ytdlpPath={ytdlpPath}
+          ffmpegPath={ffmpegPath}
+          downloadPath={localPath || undefined}
           onSave={handleSettingsSave}
           onClose={() => setShowSettings(false)}
+        />
+      )}
+
+      {/* Album Art Modal */}
+      {showAlbumArt && albumArtFiles.length > 0 && (
+        <AlbumArtModal
+          files={albumArtFiles}
+          source={albumArtSource}
+          onClose={() => setShowAlbumArt(false)}
         />
       )}
 
@@ -1000,6 +1137,7 @@ function App() {
       {showDownload && localPath && (
         <DownloadModal
           ytdlpPath={ytdlpPath || ''}
+          ffmpegPath={ffmpegPath}
           outputPath={localPath}
           onClose={() => setShowDownload(false)}
           onDownloadComplete={() => {

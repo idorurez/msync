@@ -10,7 +10,14 @@
     "electron:dev": "vite",
     "electron:build": "vite build && electron-builder"
   },
-  "keywords": ["music", "sync", "metadata", "android", "adb", "electron"],
+  "keywords": [
+    "music",
+    "sync",
+    "metadata",
+    "android",
+    "adb",
+    "electron"
+  ],
   "author": "",
   "license": "MIT",
   "devDependencies": {
@@ -35,6 +42,7 @@
     "music-metadata": "^7.14.0",
     "node-taglib-sharp": "^5.2.3",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "sql.js": "^1.14.0"
   }
 }

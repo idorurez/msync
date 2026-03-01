@@ -19,6 +19,8 @@ interface PaneProps {
   onBulkEdit?: (files: MusicFile[]) => void;
   onShowInfo?: (file: MusicFile) => void;
   onFixMetadata?: (files: MusicFile[]) => void;
+  onFetchAlbumArt?: (files: MusicFile[]) => void;
+  onRenameFile?: (filePath: string, newFilename: string) => void;
   loading: boolean;
   isAndroid?: boolean;
   deviceConnected?: boolean;
@@ -41,6 +43,8 @@ export function Pane({
   onBulkEdit,
   onShowInfo,
   onFixMetadata,
+  onFetchAlbumArt,
+  onRenameFile,
   loading,
   isAndroid = false,
   deviceConnected = true,
@@ -48,6 +52,7 @@ export function Pane({
 }: PaneProps) {
   const [folderTree, setFolderTree] = useState<FolderNode | null>(null);
   const [showTree, setShowTree] = useState(false);
+  const [filterQuery, setFilterQuery] = useState('');
 
   const handleLoadTree = async () => {
     if (!path) return;
@@ -138,6 +143,29 @@ export function Pane({
         </div>
       )}
 
+      {/* Filter bar */}
+      {(path || (isAndroid && deviceConnected)) && (
+        <div className="flex items-center gap-1 px-2 py-1 bg-gray-850 border-b border-gray-700">
+          <span className="text-[10px] text-gray-500 font-tech">Filter:</span>
+          <input
+            type="text"
+            value={filterQuery}
+            onChange={(e) => setFilterQuery(e.target.value)}
+            placeholder="filename..."
+            className="flex-1 bg-transparent text-xs font-tech text-gray-300 outline-none placeholder-gray-600"
+          />
+          {filterQuery && (
+            <button
+              onClick={() => setFilterQuery('')}
+              className="text-[10px] text-gray-500 hover:text-gray-300 font-tech leading-none"
+              title="Clear filter"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Content area */}
       <div className="flex-1 overflow-hidden relative">
         {!path && !isAndroid ? (
@@ -183,7 +211,7 @@ export function Pane({
         ) : (
           <>
             <FileTable
-              files={files}
+              files={filterQuery ? files.filter(f => f.filename.toLowerCase().includes(filterQuery.toLowerCase())) : files}
               selectedFiles={selectedFiles}
               onSelectFiles={onSelectFiles}
               onDeleteFiles={onDeleteFiles}
@@ -193,6 +221,8 @@ export function Pane({
               onBulkEdit={onBulkEdit}
               onShowInfo={onShowInfo}
               onFixMetadata={onFixMetadata}
+              onFetchAlbumArt={onFetchAlbumArt}
+              onRenameFile={onRenameFile}
               isDropTarget={!!onDropFiles}
             />
 

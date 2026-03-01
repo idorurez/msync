@@ -2,6 +2,7 @@ import * as mm from 'music-metadata';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { MusicFile, FolderNode, AudioFormat } from '../src/types';
+import type { DatabaseManager, DbFileRecord } from './db';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const TagLib = require('node-taglib-sharp');
@@ -80,7 +81,8 @@ export async function readMetadata(filePath: string): Promise<MusicFile> {
       rating,
       lastMetadataUpdate: stats.mtime,
       format,
-      size: stats.size
+      size: stats.size,
+      bitrate: metadata.format.bitrate ? Math.round(metadata.format.bitrate / 1000) : undefined
     };
   } catch {
     return {
@@ -102,7 +104,13 @@ export async function writeMetadata(filePath: string, metadata: Partial<MusicFil
   const ext = path.extname(filePath).toLowerCase();
 
   try {
-    const file = TagLib.File.createFromPath(filePath);
+    let file;
+    try {
+      file = TagLib.File.createFromPath(filePath);
+    } catch {
+      // Some files have non-standard headers; skip audio property scan and just access tags
+      file = TagLib.File.createFromPath(filePath, undefined, 0);
+    }
 
     if (metadata.title !== undefined) {
       file.tag.title = metadata.title;
@@ -203,6 +211,136 @@ export async function scanFolder(folderPath: string): Promise<MusicFile[]> {
 
   await scan(folderPath);
   return files;
+}
+
+// Convert DbFileRecord to MusicFile for renderer
+export function dbRecordToMusicFile(record: DbFileRecord): MusicFile {
+  return {
+    id: record.path,
+    path: record.path,
+    filename: record.filename,
+    title: record.title || path.basename(record.filename, path.extname(record.filename)),
+    artist: record.artist,
+    album: record.album,
+    rating: record.rating,
+    lastMetadataUpdate: record.mtime ? new Date(record.mtime) : null,
+    format: record.format as AudioFormat,
+    size: record.size,
+    bitrate: record.bitrate ?? undefined
+  };
+}
+
+// Convert MusicFile to DB insert record
+function musicFileToDbRecord(file: MusicFile, source: 'local' | 'android'): Omit<DbFileRecord, 'id' | 'created_at' | 'updated_at' | 'last_scanned'> {
+  return {
+    path: file.path,
+    source,
+    filename: file.filename,
+    filename_lower: file.filename.toLowerCase(),
+    directory: path.dirname(file.path),
+    format: file.format,
+    size: file.size,
+    mtime: file.lastMetadataUpdate?.getTime() ?? null,
+    title: file.title,
+    artist: file.artist,
+    album: file.album,
+    rating: file.rating,
+    bitrate: file.bitrate ?? null
+  };
+}
+
+interface FileOnDisk {
+  path: string;
+  mtime: number;
+  size: number;
+}
+
+// Walk filesystem collecting audio file info (no metadata reading)
+function walkForAudioFiles(dir: string): FileOnDisk[] {
+  const results: FileOnDisk[] = [];
+
+  function walk(currentDir: string) {
+    try {
+      const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(currentDir, entry.name);
+        if (entry.isDirectory()) {
+          walk(fullPath);
+        } else if (entry.isFile() && isSupportedAudio(entry.name)) {
+          try {
+            const stats = fs.statSync(fullPath);
+            results.push({
+              path: fullPath,
+              mtime: stats.mtimeMs,
+              size: stats.size
+            });
+          } catch {
+            // Skip unreadable files
+          }
+        }
+      }
+    } catch {
+      // Skip unreadable directories
+    }
+  }
+
+  walk(dir);
+  return results;
+}
+
+// Incremental scan: only read metadata for new/changed files, use DB cache for unchanged
+export async function incrementalScanFolder(
+  folderPath: string,
+  db: DatabaseManager,
+  source: 'local' | 'android' = 'local',
+  onProgress?: (scanned: number, total: number, file: string) => void
+): Promise<MusicFile[]> {
+  // 1. Walk filesystem
+  const filesOnDisk = walkForAudioFiles(folderPath);
+  const currentPaths = new Set(filesOnDisk.map(f => f.path));
+
+  // 2. Get cached entries from DB
+  const cachedFiles = db.getFilesInTree(folderPath, source);
+  const cachedByPath = new Map(cachedFiles.map(f => [f.path, f]));
+
+  // 3. Classify files
+  const toRead: FileOnDisk[] = [];
+  const unchanged: DbFileRecord[] = [];
+
+  for (const diskFile of filesOnDisk) {
+    const cached = cachedByPath.get(diskFile.path);
+    if (cached && cached.mtime === Math.floor(diskFile.mtime) && cached.size === diskFile.size) {
+      unchanged.push(cached);
+    } else {
+      toRead.push(diskFile);
+    }
+  }
+
+  // 4. Remove deleted files from DB
+  db.removeStaleFiles(folderPath, source, currentPaths);
+
+  // 5. Read metadata for new/changed files and upsert to DB
+  const newRecords: Omit<DbFileRecord, 'id' | 'created_at' | 'updated_at' | 'last_scanned'>[] = [];
+
+  for (let i = 0; i < toRead.length; i++) {
+    const diskFile = toRead[i];
+    onProgress?.(i + 1, toRead.length, path.basename(diskFile.path));
+
+    try {
+      const metadata = await readMetadata(diskFile.path);
+      newRecords.push(musicFileToDbRecord(metadata, source));
+    } catch {
+      // Skip unreadable files
+    }
+  }
+
+  if (newRecords.length > 0) {
+    db.batchUpsertFiles(newRecords);
+  }
+
+  // 6. Return all files as MusicFile[]
+  const allDbFiles = db.getFilesInTree(folderPath, source);
+  return allDbFiles.map(dbRecordToMusicFile);
 }
 
 export function getFolderTree(folderPath: string): FolderNode {

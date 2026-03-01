@@ -389,6 +389,12 @@ export class AdbManager extends EventEmitter {
     }
   }
 
+  async renameFile(oldPath: string, newPath: string): Promise<void> {
+    if (!this.currentDevice) throw new Error('No device connected');
+    const device = this.client.getDevice(this.currentDevice.id);
+    await device.shell(`mv "${oldPath}" "${newPath}"`);
+  }
+
   async deleteFiles(filePaths: string[]): Promise<void> {
     if (!this.currentDevice) {
       throw new Error('No device connected');

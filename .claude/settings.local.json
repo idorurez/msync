@@ -5,7 +5,9 @@
       "Bash(where node npm)",
       "Bash(echo:*)",
       "Bash(cmd.exe /c \"where node\")",
-      "Bash(powershell.exe -Command \"Get-Command node -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source\")"
+      "Bash(powershell.exe -Command \"Get-Command node -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source\")",
+      "Bash(npm.cmd run:*)",
+      "Bash(node:*)"
     ]
   }
 }

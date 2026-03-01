@@ -13,6 +13,9 @@ interface FileTableProps {
   onBulkEdit?: (files: MusicFile[]) => void;
   onShowInfo?: (file: MusicFile) => void;
   onFixMetadata?: (files: MusicFile[]) => void;
+  onFetchAlbumArt?: (files: MusicFile[]) => void;
+  onRenameFile?: (filePath: string, newFilename: string) => void;
+  onMoveFiles?: (filePaths: string[], targetDir: string) => void;
   isDropTarget?: boolean;
 }
 
@@ -37,6 +40,9 @@ export function FileTable({
   onBulkEdit,
   onShowInfo,
   onFixMetadata,
+  onFetchAlbumArt,
+  onRenameFile,
+  onMoveFiles,
   isDropTarget = false
 }: FileTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>('title');
@@ -48,6 +54,8 @@ export function FileTable({
     filePath: null
   });
   const [isDragOver, setIsDragOver] = useState(false);
+  const [renamingPath, setRenamingPath] = useState<string | null>(null);
+  const [renamingValue, setRenamingValue] = useState('');
 
   const sortedFiles = useMemo(() => {
     return [...files].sort((a, b) => {
@@ -176,6 +184,25 @@ export function FileTable({
     closeContextMenu();
   }, [onFixMetadata, selectedFiles, files, closeContextMenu]);
 
+  const handleFetchAlbumArt = useCallback(() => {
+    if (onFetchAlbumArt && selectedFiles.size > 0) {
+      const selectedFileObjects = files.filter(f => selectedFiles.has(f.path));
+      onFetchAlbumArt(selectedFileObjects);
+    }
+    closeContextMenu();
+  }, [onFetchAlbumArt, selectedFiles, files, closeContextMenu]);
+
+  const handleRenameFromMenu = useCallback(() => {
+    if (contextMenu.filePath) {
+      const file = files.find(f => f.path === contextMenu.filePath);
+      if (file) {
+        setRenamingPath(file.path);
+        setRenamingValue(file.filename);
+      }
+    }
+    closeContextMenu();
+  }, [contextMenu.filePath, files, closeContextMenu]);
+
   const handleSelectAllFromMenu = useCallback(() => {
     onSelectFiles(new Set(files.map(f => f.path)));
     closeContextMenu();
@@ -185,6 +212,16 @@ export function FileTable({
     onSelectFiles(new Set());
     closeContextMenu();
   }, [onSelectFiles, closeContextMenu]);
+
+  const handleMoveFiles = useCallback(async () => {
+    if (onMoveFiles && selectedFiles.size > 0) {
+      const targetDir = await window.electronAPI.selectFolder();
+      if (targetDir) {
+        onMoveFiles(Array.from(selectedFiles), targetDir);
+      }
+    }
+    closeContextMenu();
+  }, [onMoveFiles, selectedFiles, closeContextMenu]);
 
   // Drag and drop handlers
   const handleDragStart = useCallback((event: React.DragEvent, file: MusicFile) => {
@@ -313,6 +350,11 @@ export function FileTable({
               Album <SortIcon column="album" />
             </th>
             <th
+              className="px-1 py-0.5 text-[10px] uppercase tracking-wide w-12 text-gray-500"
+            >
+              Kbps
+            </th>
+            <th
               className="px-1 py-0.5 cursor-pointer hover:bg-gray-700 transition-colors text-[10px] uppercase tracking-wide w-20"
               onClick={() => handleSort('rating')}
             >
@@ -333,7 +375,7 @@ export function FileTable({
               onClick={(e) => handleSelectFile(file, e)}
               onDoubleClick={() => onPlayFile?.(file.path)}
               onContextMenu={(e) => handleContextMenu(e, file)}
-              draggable
+              draggable={renamingPath !== file.path}
               onDragStart={(e) => handleDragStart(e, file)}
               className={`cursor-pointer border-b border-gray-800/50 transition-colors ${
                 selectedFiles.has(file.path)
@@ -349,14 +391,48 @@ export function FileTable({
                   className="rounded bg-gray-700 border-gray-600 w-3 h-3"
                 />
               </td>
-              <td className="px-1 py-0.5 truncate max-w-[180px]" title={file.title}>
-                {file.title}
+              <td className="px-1 py-0.5 max-w-[180px]" title={renamingPath === file.path ? file.filename : file.title}>
+                {renamingPath === file.path ? (
+                  <input
+                    type="text"
+                    value={renamingValue}
+                    ref={(node) => { if (node && document.activeElement !== node) { node.focus(); node.select(); } }}
+                    onChange={(e) => setRenamingValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      e.stopPropagation();
+                      if (e.key === 'Enter') {
+                        const trimmed = renamingValue.trim();
+                        if (trimmed && trimmed !== file.filename) {
+                          onRenameFile?.(file.path, trimmed);
+                        }
+                        setRenamingPath(null);
+                      } else if (e.key === 'Escape') {
+                        setRenamingPath(null);
+                      }
+                    }}
+                    onBlur={() => {
+                      const trimmed = renamingValue.trim();
+                      if (trimmed && trimmed !== file.filename) {
+                        onRenameFile?.(file.path, trimmed);
+                      }
+                      setRenamingPath(null);
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    className="w-full bg-gray-900 text-white text-xs px-1.5 py-0.5 rounded border border-blue-400 cursor-text focus:outline-none focus:border-blue-300"
+                  />
+                ) : (
+                  <span className="truncate block">{file.title}</span>
+                )}
               </td>
               <td className="px-1 py-0.5 truncate max-w-[120px] text-gray-400" title={file.artist}>
                 {file.artist || '-'}
               </td>
               <td className="px-1 py-0.5 truncate max-w-[120px] text-gray-400" title={file.album}>
                 {file.album || '-'}
+              </td>
+              <td className="px-1 py-0.5 text-gray-500 text-[10px]">
+                {file.bitrate ?? '—'}
               </td>
               <td className="px-1 py-0.5">
                 <RatingStars
@@ -421,6 +497,38 @@ export function FileTable({
                 onClick={handleFixMetadata}
               >
                 🔧 Fix from Filename ({selectedFiles.size})
+              </button>
+            </>
+          )}
+          {onFetchAlbumArt && selectedFiles.size > 0 && (
+            <>
+              <button
+                className="w-full px-2 py-1 text-left hover:bg-gray-700 text-blue-400 flex items-center gap-1"
+                onClick={handleFetchAlbumArt}
+              >
+                🖼 Find Album Art ({selectedFiles.size})
+              </button>
+            </>
+          )}
+          {onRenameFile && contextMenu.filePath && (
+            <>
+              <div className="border-t border-gray-700 my-0.5"></div>
+              <button
+                className="w-full px-2 py-1 text-left hover:bg-gray-700 text-yellow-400 flex items-center gap-1"
+                onClick={handleRenameFromMenu}
+              >
+                ✏ Rename
+              </button>
+            </>
+          )}
+          {onMoveFiles && selectedFiles.size > 0 && (
+            <>
+              <div className="border-t border-gray-700 my-0.5"></div>
+              <button
+                className="w-full px-2 py-1 text-left hover:bg-gray-700 text-cyan-400 flex items-center gap-1"
+                onClick={handleMoveFiles}
+              >
+                Move to... ({selectedFiles.size})
               </button>
             </>
           )}

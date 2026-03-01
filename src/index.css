@@ -168,37 +168,11 @@ input[type="checkbox"] {
 
 /* Header with customizable background */
 .header-floral {
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  background: linear-gradient(135deg, #0e0018 0%, #1a002e 50%, #240045 100%);
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
 
-/* Custom background image support */
-.header-floral.has-custom-bg {
-  background: transparent;
-}
-
-.header-floral .header-bg-image {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-size: cover;
-  background-position: center;
-  opacity: 0.7;
-  pointer-events: none;
-}
-
-.header-floral .header-bg-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(90deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.3) 50%, rgba(0,0,0,0.6) 100%);
-  pointer-events: none;
-}
 
 .header-floral::before {
   content: '';

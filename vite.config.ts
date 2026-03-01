@@ -17,7 +17,7 @@ export default defineConfig({
           build: {
             outDir: 'dist-electron',
             rollupOptions: {
-              external: ['@devicefarmer/adbkit', 'music-metadata', 'node-taglib-sharp']
+              external: ['@devicefarmer/adbkit', 'music-metadata', 'node-taglib-sharp', 'sql.js']
             }
           }
         }

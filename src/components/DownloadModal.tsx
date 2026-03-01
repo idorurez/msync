@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 interface DownloadModalProps {
   ytdlpPath: string;
+  ffmpegPath?: string;
   outputPath: string;
   onClose: () => void;
   onDownloadComplete: () => void;
@@ -14,9 +15,15 @@ interface DownloadProgress {
   total?: number;
 }
 
-export function DownloadModal({ ytdlpPath, outputPath, onClose, onDownloadComplete }: DownloadModalProps) {
+export function DownloadModal({ ytdlpPath, ffmpegPath, outputPath, onClose, onDownloadComplete }: DownloadModalProps) {
   const [url, setUrl] = useState('');
+  const [downloadPath, setDownloadPath] = useState(outputPath);
   const [progress, setProgress] = useState<DownloadProgress>({ status: 'idle', message: '' });
+
+  const handleBrowsePath = async () => {
+    const selected = await window.electronAPI.selectFolder();
+    if (selected) setDownloadPath(selected);
+  };
 
   const handleDownload = async () => {
     if (!url.trim()) {
@@ -29,20 +36,20 @@ export function DownloadModal({ ytdlpPath, outputPath, onClose, onDownloadComple
       return;
     }
 
-    if (!outputPath) {
-      setProgress({ status: 'error', message: 'No output folder selected. Select a local folder first.' });
+    if (!downloadPath) {
+      setProgress({ status: 'error', message: 'No output folder selected.' });
       return;
     }
 
     setProgress({ status: 'downloading', message: 'Starting download...' });
 
     try {
-      const result = await window.electronAPI.downloadWithYtdlp(url.trim(), outputPath, ytdlpPath);
-      
+      const result = await window.electronAPI.downloadWithYtdlp(url.trim(), downloadPath, ytdlpPath, ffmpegPath);
+
       if (result.success) {
-        setProgress({ 
-          status: 'complete', 
-          message: `Downloaded ${result.fileCount || 1} file(s) successfully!` 
+        setProgress({
+          status: 'complete',
+          message: `Downloaded ${result.fileCount || 1} file(s) successfully!`
         });
         onDownloadComplete();
       } else {
@@ -103,14 +110,28 @@ export function DownloadModal({ ytdlpPath, outputPath, onClose, onDownloadComple
             </p>
           </div>
 
-          {/* Output Path Display */}
+          {/* Output Path */}
           <div className="space-y-1">
             <label className="text-xs text-theme-secondary uppercase tracking-wide block">
-              Output Folder
+              Download To
             </label>
-            <p className="text-xs text-theme-muted font-mono bg-theme-tertiary px-2 py-1 rounded truncate">
-              {outputPath || 'No folder selected'}
-            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={downloadPath}
+                onChange={(e) => setDownloadPath(e.target.value)}
+                placeholder="Select a folder..."
+                disabled={isDownloading}
+                className="flex-1 px-2 py-1.5 text-xs bg-theme-primary border border-theme rounded-theme text-theme-primary font-mono disabled:opacity-50"
+              />
+              <button
+                onClick={handleBrowsePath}
+                disabled={isDownloading}
+                className="px-3 py-1.5 text-xs bg-theme-tertiary hover:bg-theme-hover rounded-theme transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Browse
+              </button>
+            </div>
           </div>
 
           {/* Progress */}
@@ -150,7 +171,7 @@ export function DownloadModal({ ytdlpPath, outputPath, onClose, onDownloadComple
           {progress.status !== 'complete' && (
             <button
               onClick={handleDownload}
-              disabled={isDownloading || !url.trim()}
+              disabled={isDownloading || !url.trim() || !downloadPath}
               className="px-4 py-2 text-sm bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 rounded-theme transition-colors text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {isDownloading ? (
