@@ -40,6 +40,23 @@ const DEFAULT_COLUMN_WIDTHS: Record<ColumnKey, number> = {
 
 const MIN_COL_WIDTH = 30;
 
+const DEFAULT_COLUMN_ORDER: SortKey[] = [
+  'title', 'artist', 'album', 'genre', 'format', 'bitrate', 'size', 'rating', 'lastMetadataUpdate',
+];
+
+const COLUMN_LABELS: Record<SortKey, string> = {
+  title: 'Title',
+  artist: 'Artist',
+  album: 'Album',
+  genre: 'Genre',
+  format: 'Fmt',
+  bitrate: 'Kbps',
+  size: 'Size',
+  rating: 'Rating',
+  lastMetadataUpdate: 'Updated',
+  filename: 'Filename',
+};
+
 interface ContextMenuState {
   visible: boolean;
   x: number;
@@ -75,8 +92,11 @@ export function FileTable({
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renamingValue, setRenamingValue] = useState('');
   const [columnWidths, setColumnWidths] = useState<Record<ColumnKey, number>>({ ...DEFAULT_COLUMN_WIDTHS });
+  const [columnOrder, setColumnOrder] = useState<SortKey[]>([...DEFAULT_COLUMN_ORDER]);
   const [isResizingColumn, setIsResizingColumn] = useState(false);
   const resizingCol = useRef<{ key: ColumnKey; startX: number; startWidth: number } | null>(null);
+  const [draggedCol, setDraggedCol] = useState<SortKey | null>(null);
+  const [dragOverCol, setDragOverCol] = useState<SortKey | null>(null);
 
   // Column resize: use a full-screen overlay to capture mouse events cleanly
   const handleResizeStart = useCallback((e: React.MouseEvent, colKey: ColumnKey) => {
@@ -96,6 +116,38 @@ export function FileTable({
   const handleResizeEnd = useCallback(() => {
     resizingCol.current = null;
     setIsResizingColumn(false);
+  }, []);
+
+  // Column reorder via drag-and-drop on headers
+  const handleColDragStart = useCallback((e: React.DragEvent, key: SortKey) => {
+    setDraggedCol(key);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', key);
+  }, []);
+
+  const handleColDragOver = useCallback((e: React.DragEvent, key: SortKey) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverCol(key);
+  }, []);
+
+  const handleColDrop = useCallback((e: React.DragEvent, targetKey: SortKey) => {
+    e.preventDefault();
+    if (draggedCol && draggedCol !== targetKey) {
+      setColumnOrder(prev => {
+        const newOrder = prev.filter(k => k !== draggedCol);
+        const targetIndex = newOrder.indexOf(targetKey);
+        newOrder.splice(targetIndex, 0, draggedCol);
+        return newOrder;
+      });
+    }
+    setDraggedCol(null);
+    setDragOverCol(null);
+  }, [draggedCol]);
+
+  const handleColDragEnd = useCallback(() => {
+    setDraggedCol(null);
+    setDragOverCol(null);
   }, []);
 
   const sortedFiles = useMemo(() => {
@@ -400,15 +452,9 @@ export function FileTable({
       <table className="w-full font-tech text-xs" style={{ tableLayout: 'fixed' }}>
         <colgroup>
           <col style={{ width: columnWidths.checkbox }} />
-          <col style={{ width: columnWidths.title }} />
-          <col style={{ width: columnWidths.artist }} />
-          <col style={{ width: columnWidths.album }} />
-          <col style={{ width: columnWidths.genre }} />
-          <col style={{ width: columnWidths.format }} />
-          <col style={{ width: columnWidths.bitrate }} />
-          <col style={{ width: columnWidths.size }} />
-          <col style={{ width: columnWidths.rating }} />
-          <col style={{ width: columnWidths.lastMetadataUpdate }} />
+          {columnOrder.map(key => (
+            <col key={key} style={{ width: columnWidths[key] }} />
+          ))}
         </colgroup>
         <thead className="sticky top-0 bg-gray-800 text-left z-20">
           <tr>
@@ -420,27 +466,25 @@ export function FileTable({
                 className="rounded bg-gray-700 border-gray-600 w-3 h-3"
               />
             </th>
-            {([
-              ['title', 'Title'],
-              ['artist', 'Artist'],
-              ['album', 'Album'],
-              ['genre', 'Genre'],
-              ['format', 'Fmt'],
-              ['bitrate', 'Kbps'],
-              ['size', 'Size'],
-              ['rating', 'Rating'],
-              ['lastMetadataUpdate', 'Updated'],
-            ] as [SortKey, string][]).map(([key, label]) => (
+            {columnOrder.map(key => (
               <th
                 key={key}
-                className="px-1 py-0.5 cursor-pointer hover:bg-gray-700 transition-colors text-[10px] uppercase tracking-wide relative overflow-hidden"
+                draggable
+                onDragStart={(e) => handleColDragStart(e, key)}
+                onDragOver={(e) => handleColDragOver(e, key)}
+                onDrop={(e) => handleColDrop(e, key)}
+                onDragEnd={handleColDragEnd}
+                className={`px-1 py-0.5 cursor-pointer hover:bg-gray-700 transition-colors text-[10px] uppercase tracking-wide relative overflow-hidden ${
+                  draggedCol === key ? 'opacity-40' : ''
+                } ${dragOverCol === key && draggedCol !== key ? 'border-l-2 border-blue-400' : ''}`}
                 onClick={() => handleSort(key)}
               >
-                <span className="truncate block pr-2">{label} <SortIcon column={key} /></span>
+                <span className="truncate block pr-2">{COLUMN_LABELS[key]} <SortIcon column={key} /></span>
                 <div
                   className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/60 active:bg-blue-500 z-30"
                   onMouseDown={(e) => handleResizeStart(e, key)}
                   onClick={(e) => e.stopPropagation()}
+                  draggable={false}
                 />
               </th>
             ))}
@@ -469,69 +513,93 @@ export function FileTable({
                   className="rounded bg-gray-700 border-gray-600 w-3 h-3"
                 />
               </td>
-              <td className="px-1 py-0.5 overflow-hidden" title={renamingPath === file.path ? file.filename : file.title}>
-                {renamingPath === file.path ? (
-                  <input
-                    type="text"
-                    value={renamingValue}
-                    ref={(node) => { if (node && document.activeElement !== node) { node.focus(); node.select(); } }}
-                    onChange={(e) => setRenamingValue(e.target.value)}
-                    onKeyDown={(e) => {
-                      e.stopPropagation();
-                      if (e.key === 'Enter') {
-                        const trimmed = renamingValue.trim();
-                        if (trimmed && trimmed !== file.filename) {
-                          onRenameFile?.(file.path, trimmed);
-                        }
-                        setRenamingPath(null);
-                      } else if (e.key === 'Escape') {
-                        setRenamingPath(null);
-                      }
-                    }}
-                    onBlur={() => {
-                      const trimmed = renamingValue.trim();
-                      if (trimmed && trimmed !== file.filename) {
-                        onRenameFile?.(file.path, trimmed);
-                      }
-                      setRenamingPath(null);
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    className="w-full bg-gray-900 text-white text-xs px-1.5 py-0.5 rounded border border-blue-400 cursor-text focus:outline-none focus:border-blue-300"
-                  />
-                ) : (
-                  <span className="truncate block">{file.title}</span>
-                )}
-              </td>
-              <td className="px-1 py-0.5 truncate overflow-hidden text-gray-400" title={file.artist}>
-                {file.artist || '-'}
-              </td>
-              <td className="px-1 py-0.5 truncate overflow-hidden text-gray-400" title={file.album}>
-                {file.album || '-'}
-              </td>
-              <td className="px-1 py-0.5 truncate overflow-hidden text-gray-400" title={file.genre}>
-                {file.genre || '-'}
-              </td>
-              <td className="px-1 py-0.5 text-gray-500 text-[10px] uppercase overflow-hidden truncate">
-                {file.format}
-              </td>
-              <td className="px-1 py-0.5 text-gray-500 text-[10px] overflow-hidden truncate">
-                {file.bitrate ?? '—'}
-              </td>
-              <td className="px-1 py-0.5 text-gray-500 text-[10px] overflow-hidden truncate">
-                {formatSize(file.size)}
-              </td>
-              <td className="px-1 py-0.5 overflow-hidden">
-                <RatingStars
-                  rating={file.rating}
-                  editable={!!onRatingChange}
-                  onChange={(rating) => onRatingChange?.(file.path, rating)}
-                  size="small"
-                />
-              </td>
-              <td className="px-1 py-0.5 text-gray-400 text-[10px] overflow-hidden truncate">
-                {formatDate(file.lastMetadataUpdate)}
-              </td>
+              {columnOrder.map(key => {
+                if (key === 'title') {
+                  return (
+                    <td key={key} className="px-1 py-0.5 overflow-hidden" title={renamingPath === file.path ? file.filename : file.title}>
+                      {renamingPath === file.path ? (
+                        <input
+                          type="text"
+                          value={renamingValue}
+                          ref={(node) => { if (node && document.activeElement !== node) { node.focus(); node.select(); } }}
+                          onChange={(e) => setRenamingValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            e.stopPropagation();
+                            if (e.key === 'Enter') {
+                              const trimmed = renamingValue.trim();
+                              if (trimmed && trimmed !== file.filename) {
+                                onRenameFile?.(file.path, trimmed);
+                              }
+                              setRenamingPath(null);
+                            } else if (e.key === 'Escape') {
+                              setRenamingPath(null);
+                            }
+                          }}
+                          onBlur={() => {
+                            const trimmed = renamingValue.trim();
+                            if (trimmed && trimmed !== file.filename) {
+                              onRenameFile?.(file.path, trimmed);
+                            }
+                            setRenamingPath(null);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          className="w-full bg-gray-900 text-white text-xs px-1.5 py-0.5 rounded border border-blue-400 cursor-text focus:outline-none focus:border-blue-300"
+                        />
+                      ) : (
+                        <span className="truncate block">{file.title}</span>
+                      )}
+                    </td>
+                  );
+                }
+                if (key === 'rating') {
+                  return (
+                    <td key={key} className="px-1 py-0.5 overflow-hidden">
+                      <RatingStars
+                        rating={file.rating}
+                        editable={!!onRatingChange}
+                        onChange={(rating) => onRatingChange?.(file.path, rating)}
+                        size="small"
+                      />
+                    </td>
+                  );
+                }
+                if (key === 'lastMetadataUpdate') {
+                  return (
+                    <td key={key} className="px-1 py-0.5 text-gray-400 text-[10px] overflow-hidden truncate">
+                      {formatDate(file.lastMetadataUpdate)}
+                    </td>
+                  );
+                }
+                if (key === 'size') {
+                  return (
+                    <td key={key} className="px-1 py-0.5 text-gray-500 text-[10px] overflow-hidden truncate">
+                      {formatSize(file.size)}
+                    </td>
+                  );
+                }
+                if (key === 'format') {
+                  return (
+                    <td key={key} className="px-1 py-0.5 text-gray-500 text-[10px] uppercase overflow-hidden truncate">
+                      {file.format}
+                    </td>
+                  );
+                }
+                if (key === 'bitrate') {
+                  return (
+                    <td key={key} className="px-1 py-0.5 text-gray-500 text-[10px] overflow-hidden truncate">
+                      {file.bitrate ?? '—'}
+                    </td>
+                  );
+                }
+                // artist, album, genre, filename
+                const value = file[key as keyof MusicFile] as string;
+                return (
+                  <td key={key} className="px-1 py-0.5 truncate overflow-hidden text-gray-400" title={value || ''}>
+                    {value || '-'}
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>
