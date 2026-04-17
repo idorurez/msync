@@ -12,11 +12,13 @@ export function BulkEditModal({ files, onSave, onClose }: BulkEditModalProps) {
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
   const [album, setAlbum] = useState('');
+  const [genre, setGenre] = useState('');
   const [rating, setRating] = useState<number | null>(null);
 
   const [applyTitle, setApplyTitle] = useState(false);
   const [applyArtist, setApplyArtist] = useState(false);
   const [applyAlbum, setApplyAlbum] = useState(false);
+  const [applyGenre, setApplyGenre] = useState(false);
   const [applyRating, setApplyRating] = useState(false);
 
   const handleSave = () => {
@@ -30,6 +32,9 @@ export function BulkEditModal({ files, onSave, onClose }: BulkEditModalProps) {
     }
     if (applyAlbum) {
       updates.album = album.trim();
+    }
+    if (applyGenre) {
+      updates.genre = genre.trim();
     }
     if (applyRating && rating !== null) {
       updates.rating = rating;
@@ -142,6 +147,30 @@ export function BulkEditModal({ files, onSave, onClose }: BulkEditModalProps) {
             />
           </div>
 
+          {/* Genre */}
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="applyGenre"
+                checked={applyGenre}
+                onChange={(e) => setApplyGenre(e.target.checked)}
+                className="w-3 h-3"
+              />
+              <label htmlFor="applyGenre" className="text-xs text-theme-secondary uppercase tracking-wide">
+                Genre
+              </label>
+            </div>
+            <input
+              type="text"
+              value={genre}
+              onChange={(e) => setGenre(e.target.value)}
+              disabled={!applyGenre}
+              placeholder="Enter genre..."
+              className="w-full px-2 py-1.5 text-xs bg-theme-primary border border-theme rounded-theme text-theme-primary disabled:opacity-50 disabled:cursor-not-allowed"
+            />
+          </div>
+
           {/* Rating */}
           <div className="space-y-1">
             <div className="flex items-center gap-2">
@@ -177,7 +206,7 @@ export function BulkEditModal({ files, onSave, onClose }: BulkEditModalProps) {
           </button>
           <button
             onClick={handleSave}
-            disabled={!applyTitle && !applyArtist && !applyAlbum && !applyRating}
+            disabled={!applyTitle && !applyArtist && !applyAlbum && !applyGenre && !applyRating}
             className="px-3 py-1.5 text-xs bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 rounded-theme transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-white"
           >
             Apply to {files.length} file{files.length !== 1 ? 's' : ''}

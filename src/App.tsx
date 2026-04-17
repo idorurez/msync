@@ -60,6 +60,13 @@ function App() {
   const [ytdlpPath, setYtdlpPath] = useState<string | undefined>(settings.current.ytdlpPath);
   const [ffmpegPath, setFfmpegPath] = useState<string | undefined>(settings.current.ffmpegPath);
 
+  // Resizable center split state
+  const [splitPosition, setSplitPosition] = useState(50); // percentage of pane space for local pane
+  const [isResizingSplit, setIsResizingSplit] = useState(false);
+  const mainContentRef = useRef<HTMLDivElement>(null);
+  const INFO_PANEL_WIDTH = 256; // px, matches w-64
+  const DIVIDER_WIDTH = 5; // px
+
   // Processed logo URL (checkerboard background stripped via canvas)
   const [processedLogoUrl, setProcessedLogoUrl] = useState<string>(msyncLogoUrl);
   useEffect(() => {
@@ -93,6 +100,33 @@ function App() {
     };
     img.src = msyncLogoUrl;
   }, []);
+
+  // Resize handler for center split
+  useEffect(() => {
+    if (!isResizingSplit) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!mainContentRef.current) return;
+      const rect = mainContentRef.current.getBoundingClientRect();
+      // Pane space = total - InfoPanel - single divider
+      const paneStart = rect.left + INFO_PANEL_WIDTH;
+      const paneSpace = rect.width - INFO_PANEL_WIDTH - DIVIDER_WIDTH;
+      if (paneSpace <= 0) return;
+
+      const localWidth = e.clientX - paneStart;
+      const pct = (localWidth / paneSpace) * 100;
+      setSplitPosition(Math.max(15, Math.min(85, pct)));
+    };
+
+    const handleMouseUp = () => setIsResizingSplit(false);
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizingSplit]);
 
   // Bulk edit modal state
   const [bulkEditFiles, setBulkEditFiles] = useState<MusicFile[] | null>(null);
@@ -262,7 +296,22 @@ function App() {
   const handleRenameLocalFile = async (filePath: string, newFilename: string) => {
     try {
       await window.electronAPI.renameLocalFile(filePath, newFilename);
+
+      // Also rename the matched Android file if one exists
+      const oldFilename = filePath.split(/[/\\]/).pop()!;
+      const androidMatch = androidFiles.find(
+        f => f.filename.toLowerCase() === oldFilename.toLowerCase()
+      );
+      if (androidMatch) {
+        try {
+          await window.electronAPI.renameAndroidFile(androidMatch.path, newFilename);
+        } catch {
+          // Android rename failed silently — don't block local rename
+        }
+      }
+
       if (localPath) loadLocalFiles(localPath);
+      if (device) loadAndroidFiles(androidPath);
     } catch (error) {
       alert('Error renaming file: ' + error);
     }
@@ -271,7 +320,22 @@ function App() {
   const handleRenameAndroidFile = async (filePath: string, newFilename: string) => {
     try {
       await window.electronAPI.renameAndroidFile(filePath, newFilename);
+
+      // Also rename the matched local file if one exists
+      const oldFilename = filePath.split('/').pop()!;
+      const localMatch = localFiles.find(
+        f => f.filename.toLowerCase() === oldFilename.toLowerCase()
+      );
+      if (localMatch) {
+        try {
+          await window.electronAPI.renameLocalFile(localMatch.path, newFilename);
+        } catch {
+          // Local rename failed silently — don't block android rename
+        }
+      }
+
       loadAndroidFiles(androidPath);
+      if (localPath) loadLocalFiles(localPath);
     } catch (error) {
       alert('Error renaming file: ' + error);
     }
@@ -648,7 +712,9 @@ function App() {
         return;
       }
     }
+    // Refresh both sides after copy
     loadAndroidFiles(androidPath);
+    if (localPath) loadLocalFiles(localPath);
   };
 
   const handleDropOnLocal = async (droppedFiles: MusicFile[]) => {
@@ -663,7 +729,9 @@ function App() {
         return;
       }
     }
+    // Refresh both sides after copy
     loadLocalFiles(localPath);
+    if (deviceRef.current) loadAndroidFiles(androidPath);
   };
 
   // Find matching songs between local and Android by filename
@@ -989,8 +1057,11 @@ function App() {
       </header>
 
       {/* Main content - z-[11] ensures panels paint over any logo overflow from the header */}
-      <div className="flex-1 flex overflow-hidden relative z-[11]">
-        {/* Info Panel - Left sidebar */}
+      <div
+        className={`flex-1 flex overflow-hidden relative z-[11] ${isResizingSplit ? 'select-none' : ''}`}
+        ref={mainContentRef}
+      >
+        {/* Info Panel - Far left sidebar */}
         <InfoPanel
           file={infoFile}
           source={infoSource}
@@ -999,31 +1070,39 @@ function App() {
         />
 
         {/* Local files pane */}
-        <LocalPane
-          path={localPath}
-          files={localFiles}
-          selectedFiles={selectedLocalFiles}
-          onSelectFiles={setSelectedLocalFiles}
-          onSelectFolder={handleSelectLocalFolder}
-          onRefresh={handleRefreshLocal}
-          onDeleteFiles={handleDeleteLocalFiles}
-          onDropFiles={handleDropOnLocal}
-          onRatingChange={handleLocalRatingChange}
-          onPlayFile={handlePlayLocalFile}
-          onBulkEdit={handleBulkEditLocal}
-          onShowInfo={handleShowInfoLocal}
-          onFixMetadata={handleFixMetadataLocal}
-          onFetchAlbumArt={handleAlbumArtLocal}
-          onRenameFile={handleRenameLocalFile}
-          onMoveFiles={handleMoveLocalFiles}
-          loading={localLoading}
-        />
+        <div style={{ width: `calc((100% - ${INFO_PANEL_WIDTH}px - ${DIVIDER_WIDTH}px) * ${splitPosition / 100})` }} className="flex-shrink-0 min-w-0 flex">
+          <LocalPane
+            path={localPath}
+            files={localFiles}
+            selectedFiles={selectedLocalFiles}
+            onSelectFiles={setSelectedLocalFiles}
+            onSelectFolder={handleSelectLocalFolder}
+            onRefresh={handleRefreshLocal}
+            onDeleteFiles={handleDeleteLocalFiles}
+            onDropFiles={handleDropOnLocal}
+            onRatingChange={handleLocalRatingChange}
+            onPlayFile={handlePlayLocalFile}
+            onBulkEdit={handleBulkEditLocal}
+            onShowInfo={handleShowInfoLocal}
+            onFixMetadata={handleFixMetadataLocal}
+            onFetchAlbumArt={handleAlbumArtLocal}
+            onRenameFile={handleRenameLocalFile}
+            onMoveFiles={handleMoveLocalFiles}
+            loading={localLoading}
+          />
+        </div>
 
-        {/* Center divider - thin */}
-        <div className="flex flex-col items-center justify-center w-1 bg-theme-tertiary">
+        {/* Resizable center divider */}
+        <div
+          className={`flex-shrink-0 cursor-col-resize transition-colors relative ${
+            isResizingSplit ? 'bg-blue-500' : 'bg-theme-tertiary hover:bg-blue-400/50'
+          }`}
+          style={{ width: DIVIDER_WIDTH }}
+          onMouseDown={(e) => { e.preventDefault(); setIsResizingSplit(true); }}
+        >
           {/* Sync status indicator */}
           {syncProgress.status === 'syncing' && (
-            <div className="absolute bg-theme-secondary px-2 py-1 rounded text-xs text-theme-muted font-tech whitespace-nowrap z-20">
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-theme-secondary px-2 py-1 rounded text-xs text-theme-muted font-tech whitespace-nowrap z-20 pointer-events-none">
               {syncProgress.currentFile || 'Refreshing...'}
               {syncProgress.total > 0 && ` ${syncProgress.current}/${syncProgress.total}`}
             </div>
@@ -1031,30 +1110,32 @@ function App() {
         </div>
 
         {/* Right pane - Android files */}
-        <Pane
-          title="Android"
-          path={androidPath}
-          files={androidFiles}
-          selectedFiles={selectedAndroidFiles}
-          onSelectFiles={setSelectedAndroidFiles}
-          onPathChange={(path) => {
-            setAndroidPath(path);
-          }}
-          onRefresh={handleRefreshAndroid}
-          onDeleteFiles={handleDeleteAndroidFiles}
-          onDropFiles={handleDropOnAndroid}
-          onRatingChange={handleAndroidRatingChange}
-          onPlayFile={handlePlayAndroidFile}
-          onBulkEdit={handleBulkEditAndroid}
-          onShowInfo={handleShowInfoAndroid}
-          onFixMetadata={handleFixMetadataAndroid}
-          onFetchAlbumArt={handleAlbumArtAndroid}
-          onRenameFile={handleRenameAndroidFile}
-          loading={androidLoading}
-          isAndroid
-          deviceConnected={!!device}
-          error={androidError}
-        />
+        <div style={{ width: `calc((100% - ${INFO_PANEL_WIDTH}px - ${DIVIDER_WIDTH}px) * ${(100 - splitPosition) / 100})` }} className="flex-shrink-0 min-w-0 flex">
+          <Pane
+            title="Android"
+            path={androidPath}
+            files={androidFiles}
+            selectedFiles={selectedAndroidFiles}
+            onSelectFiles={setSelectedAndroidFiles}
+            onPathChange={(path) => {
+              setAndroidPath(path);
+            }}
+            onRefresh={handleRefreshAndroid}
+            onDeleteFiles={handleDeleteAndroidFiles}
+            onDropFiles={handleDropOnAndroid}
+            onRatingChange={handleAndroidRatingChange}
+            onPlayFile={handlePlayAndroidFile}
+            onBulkEdit={handleBulkEditAndroid}
+            onShowInfo={handleShowInfoAndroid}
+            onFixMetadata={handleFixMetadataAndroid}
+            onFetchAlbumArt={handleAlbumArtAndroid}
+            onRenameFile={handleRenameAndroidFile}
+            loading={androidLoading}
+            isAndroid
+            deviceConnected={!!device}
+            error={androidError}
+          />
+        </div>
       </div>
 
       {/* Status bar */}

@@ -22,6 +22,7 @@ export interface DbFileRecord {
   title: string;
   artist: string;
   album: string;
+  genre: string;
   rating: number;
   bitrate: number | null;
   last_scanned: number;
@@ -49,7 +50,7 @@ export interface CrossSourceMatch {
   android: DbFileRecord;
 }
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 export class DatabaseManager {
   private db: any = null;
@@ -109,6 +110,7 @@ export class DatabaseManager {
         title          TEXT NOT NULL DEFAULT '',
         artist         TEXT NOT NULL DEFAULT '',
         album          TEXT NOT NULL DEFAULT '',
+        genre          TEXT NOT NULL DEFAULT '',
         rating         INTEGER NOT NULL DEFAULT 0,
         bitrate        INTEGER,
         last_scanned   INTEGER NOT NULL,
@@ -144,10 +146,24 @@ export class DatabaseManager {
 
   private migrate(): void {
     const result = this.db.exec('SELECT version FROM schema_version LIMIT 1');
+    let currentVersion = 0;
     if (result.length === 0 || result[0].values.length === 0) {
       this.db.run('INSERT INTO schema_version (version) VALUES (?)', [SCHEMA_VERSION]);
+      currentVersion = SCHEMA_VERSION;
+    } else {
+      currentVersion = result[0].values[0][0] as number;
     }
-    // Future migrations go here
+
+    // Migration v1 -> v2: add genre column
+    if (currentVersion < 2) {
+      try {
+        this.db.run("ALTER TABLE files ADD COLUMN genre TEXT NOT NULL DEFAULT ''");
+      } catch {
+        // Column may already exist
+      }
+      this.db.run('UPDATE schema_version SET version = ?', [2]);
+      this.save();
+    }
   }
 
   private save(): void {
@@ -165,24 +181,24 @@ export class DatabaseManager {
       this.db.run(`
         UPDATE files SET
           filename = ?, filename_lower = ?, directory = ?, format = ?,
-          size = ?, mtime = ?, title = ?, artist = ?, album = ?,
+          size = ?, mtime = ?, title = ?, artist = ?, album = ?, genre = ?,
           rating = ?, bitrate = ?, last_scanned = ?, updated_at = ?
         WHERE path = ?
       `, [
         record.filename, record.filename_lower, record.directory, record.format,
-        record.size, record.mtime, record.title, record.artist, record.album,
+        record.size, record.mtime, record.title, record.artist, record.album, record.genre,
         record.rating, record.bitrate, now, now, record.path
       ]);
       this.save();
       return this.getFileByPath(record.path)!;
     } else {
       this.db.run(`
-        INSERT INTO files (path, source, filename, filename_lower, directory, format, size, mtime, title, artist, album, rating, bitrate, last_scanned, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO files (path, source, filename, filename_lower, directory, format, size, mtime, title, artist, album, genre, rating, bitrate, last_scanned, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         record.path, record.source, record.filename, record.filename_lower,
         record.directory, record.format, record.size, record.mtime,
-        record.title, record.artist, record.album, record.rating, record.bitrate,
+        record.title, record.artist, record.album, record.genre, record.rating, record.bitrate,
         now, now, now
       ]);
       this.save();

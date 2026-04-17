@@ -78,6 +78,7 @@ export async function readMetadata(filePath: string): Promise<MusicFile> {
       title: common.title || path.basename(filePath, path.extname(filePath)),
       artist: common.artist || '',
       album: common.album || '',
+      genre: common.genre ? common.genre.join('; ') : '',
       rating,
       lastMetadataUpdate: stats.mtime,
       format,
@@ -92,6 +93,7 @@ export async function readMetadata(filePath: string): Promise<MusicFile> {
       title: path.basename(filePath, path.extname(filePath)),
       artist: '',
       album: '',
+      genre: '',
       rating: 0,
       lastMetadataUpdate: stats.mtime,
       format,
@@ -122,6 +124,10 @@ export async function writeMetadata(filePath: string, metadata: Partial<MusicFil
 
     if (metadata.album !== undefined) {
       file.tag.album = metadata.album;
+    }
+
+    if (metadata.genre !== undefined) {
+      file.tag.genres = metadata.genre ? [metadata.genre] : [];
     }
 
     // Handle rating
@@ -222,6 +228,7 @@ export function dbRecordToMusicFile(record: DbFileRecord): MusicFile {
     title: record.title || path.basename(record.filename, path.extname(record.filename)),
     artist: record.artist,
     album: record.album,
+    genre: record.genre || '',
     rating: record.rating,
     lastMetadataUpdate: record.mtime ? new Date(record.mtime) : null,
     format: record.format as AudioFormat,
@@ -244,6 +251,7 @@ function musicFileToDbRecord(file: MusicFile, source: 'local' | 'android'): Omit
     title: file.title,
     artist: file.artist,
     album: file.album,
+    genre: file.genre,
     rating: file.rating,
     bitrate: file.bitrate ?? null
   };

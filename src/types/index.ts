@@ -5,6 +5,7 @@ export interface MusicFile {
   title: string;
   artist: string;
   album: string;
+  genre: string;
   rating: number; // 0-5 stars
   lastMetadataUpdate: Date | null;
   format: AudioFormat;

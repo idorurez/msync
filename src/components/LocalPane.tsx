@@ -277,14 +277,14 @@ export function LocalPane({
 
       {/* Filter bar */}
       {path && (
-        <div className="flex items-center gap-1 px-2 py-1 bg-gray-850 border-b border-gray-700">
+        <div className="flex items-center gap-1 px-2 py-1 bg-gray-850 border-b border-gray-700 relative z-10">
           <span className="text-[10px] text-gray-500 font-tech">Filter:</span>
           <input
             type="text"
             value={filterQuery}
             onChange={(e) => setFilterQuery(e.target.value)}
             placeholder="filename..."
-            className="flex-1 bg-transparent text-xs font-tech text-gray-300 outline-none placeholder-gray-600"
+            className="flex-1 bg-transparent text-xs font-tech text-gray-300 outline-none placeholder-gray-600 cursor-text"
           />
           {filterQuery && (
             <button

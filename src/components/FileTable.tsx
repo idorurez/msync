@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
 import { RatingStars } from './RatingStars';
 import type { MusicFile } from '../types';
 
@@ -19,8 +19,26 @@ interface FileTableProps {
   isDropTarget?: boolean;
 }
 
-type SortKey = 'title' | 'artist' | 'album' | 'rating' | 'lastMetadataUpdate';
+type SortKey = 'filename' | 'title' | 'artist' | 'album' | 'genre' | 'format' | 'size' | 'bitrate' | 'rating' | 'lastMetadataUpdate';
 type SortOrder = 'asc' | 'desc';
+
+type ColumnKey = 'checkbox' | SortKey;
+
+const DEFAULT_COLUMN_WIDTHS: Record<ColumnKey, number> = {
+  checkbox: 28,
+  title: 180,
+  artist: 120,
+  album: 120,
+  genre: 100,
+  format: 50,
+  bitrate: 48,
+  size: 60,
+  rating: 80,
+  lastMetadataUpdate: 80,
+  filename: 150,
+};
+
+const MIN_COL_WIDTH = 30;
 
 interface ContextMenuState {
   visible: boolean;
@@ -56,12 +74,38 @@ export function FileTable({
   const [isDragOver, setIsDragOver] = useState(false);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renamingValue, setRenamingValue] = useState('');
+  const [columnWidths, setColumnWidths] = useState<Record<ColumnKey, number>>({ ...DEFAULT_COLUMN_WIDTHS });
+  const [isResizingColumn, setIsResizingColumn] = useState(false);
+  const resizingCol = useRef<{ key: ColumnKey; startX: number; startWidth: number } | null>(null);
+
+  // Column resize: use a full-screen overlay to capture mouse events cleanly
+  const handleResizeStart = useCallback((e: React.MouseEvent, colKey: ColumnKey) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resizingCol.current = { key: colKey, startX: e.clientX, startWidth: columnWidths[colKey] };
+    setIsResizingColumn(true);
+  }, [columnWidths]);
+
+  const handleResizeMove = useCallback((e: React.MouseEvent) => {
+    if (!resizingCol.current) return;
+    const delta = e.clientX - resizingCol.current.startX;
+    const newWidth = Math.max(MIN_COL_WIDTH, resizingCol.current.startWidth + delta);
+    setColumnWidths(prev => ({ ...prev, [resizingCol.current!.key]: newWidth }));
+  }, []);
+
+  const handleResizeEnd = useCallback(() => {
+    resizingCol.current = null;
+    setIsResizingColumn(false);
+  }, []);
 
   const sortedFiles = useMemo(() => {
     return [...files].sort((a, b) => {
       let comparison = 0;
 
       switch (sortKey) {
+        case 'filename':
+          comparison = a.filename.localeCompare(b.filename);
+          break;
         case 'title':
           comparison = a.title.localeCompare(b.title);
           break;
@@ -71,14 +115,27 @@ export function FileTable({
         case 'album':
           comparison = a.album.localeCompare(b.album);
           break;
+        case 'genre':
+          comparison = a.genre.localeCompare(b.genre);
+          break;
+        case 'format':
+          comparison = a.format.localeCompare(b.format);
+          break;
+        case 'size':
+          comparison = a.size - b.size;
+          break;
+        case 'bitrate':
+          comparison = (a.bitrate ?? 0) - (b.bitrate ?? 0);
+          break;
         case 'rating':
           comparison = a.rating - b.rating;
           break;
-        case 'lastMetadataUpdate':
+        case 'lastMetadataUpdate': {
           const aTime = a.lastMetadataUpdate?.getTime() || 0;
           const bTime = b.lastMetadataUpdate?.getTime() || 0;
           comparison = aTime - bTime;
           break;
+        }
       }
 
       return sortOrder === 'asc' ? comparison : -comparison;
@@ -123,8 +180,13 @@ export function FileTable({
         newSelection.add(file.path);
       }
     } else {
-      newSelection.clear();
-      newSelection.add(file.path);
+      if (newSelection.has(file.path) && newSelection.size === 1) {
+        // Clicking the only selected file deselects it
+        newSelection.clear();
+      } else {
+        newSelection.clear();
+        newSelection.add(file.path);
+      }
     }
 
     onSelectFiles(newSelection);
@@ -278,6 +340,12 @@ export function FileTable({
     return <span className="ml-1">{sortOrder === 'asc' ? '↑' : '↓'}</span>;
   };
 
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
   const formatDate = (date: Date | null) => {
     if (!date) return '-';
     try {
@@ -314,16 +382,37 @@ export function FileTable({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {/* Full-screen overlay during column resize to capture mouse events */}
+      {isResizingColumn && (
+        <div
+          className="fixed inset-0 z-[9999] select-none"
+          style={{ cursor: 'col-resize' }}
+          onMouseMove={handleResizeMove}
+          onMouseUp={handleResizeEnd}
+        />
+      )}
       {isDragOver && (
         <div className="absolute inset-0 border-2 border-dashed border-blue-500 pointer-events-none z-10 flex items-center justify-center">
           <span className="bg-blue-600 px-4 py-2 rounded text-white">Drop to add files</span>
         </div>
       )}
 
-      <table className="w-full font-tech text-xs">
-        <thead className="sticky top-0 bg-gray-800 text-left">
+      <table className="w-full font-tech text-xs" style={{ tableLayout: 'fixed' }}>
+        <colgroup>
+          <col style={{ width: columnWidths.checkbox }} />
+          <col style={{ width: columnWidths.title }} />
+          <col style={{ width: columnWidths.artist }} />
+          <col style={{ width: columnWidths.album }} />
+          <col style={{ width: columnWidths.genre }} />
+          <col style={{ width: columnWidths.format }} />
+          <col style={{ width: columnWidths.bitrate }} />
+          <col style={{ width: columnWidths.size }} />
+          <col style={{ width: columnWidths.rating }} />
+          <col style={{ width: columnWidths.lastMetadataUpdate }} />
+        </colgroup>
+        <thead className="sticky top-0 bg-gray-800 text-left z-20">
           <tr>
-            <th className="px-1 py-0.5 w-6">
+            <th className="px-1 py-0.5">
               <input
                 type="checkbox"
                 checked={selectedFiles.size === files.length && files.length > 0}
@@ -331,41 +420,30 @@ export function FileTable({
                 className="rounded bg-gray-700 border-gray-600 w-3 h-3"
               />
             </th>
-            <th
-              className="px-1 py-0.5 cursor-pointer hover:bg-gray-700 transition-colors text-[10px] uppercase tracking-wide"
-              onClick={() => handleSort('title')}
-            >
-              Title <SortIcon column="title" />
-            </th>
-            <th
-              className="px-1 py-0.5 cursor-pointer hover:bg-gray-700 transition-colors text-[10px] uppercase tracking-wide"
-              onClick={() => handleSort('artist')}
-            >
-              Artist <SortIcon column="artist" />
-            </th>
-            <th
-              className="px-1 py-0.5 cursor-pointer hover:bg-gray-700 transition-colors text-[10px] uppercase tracking-wide"
-              onClick={() => handleSort('album')}
-            >
-              Album <SortIcon column="album" />
-            </th>
-            <th
-              className="px-1 py-0.5 text-[10px] uppercase tracking-wide w-12 text-gray-500"
-            >
-              Kbps
-            </th>
-            <th
-              className="px-1 py-0.5 cursor-pointer hover:bg-gray-700 transition-colors text-[10px] uppercase tracking-wide w-20"
-              onClick={() => handleSort('rating')}
-            >
-              Rating <SortIcon column="rating" />
-            </th>
-            <th
-              className="px-1 py-0.5 cursor-pointer hover:bg-gray-700 transition-colors text-[10px] uppercase tracking-wide w-20"
-              onClick={() => handleSort('lastMetadataUpdate')}
-            >
-              Updated <SortIcon column="lastMetadataUpdate" />
-            </th>
+            {([
+              ['title', 'Title'],
+              ['artist', 'Artist'],
+              ['album', 'Album'],
+              ['genre', 'Genre'],
+              ['format', 'Fmt'],
+              ['bitrate', 'Kbps'],
+              ['size', 'Size'],
+              ['rating', 'Rating'],
+              ['lastMetadataUpdate', 'Updated'],
+            ] as [SortKey, string][]).map(([key, label]) => (
+              <th
+                key={key}
+                className="px-1 py-0.5 cursor-pointer hover:bg-gray-700 transition-colors text-[10px] uppercase tracking-wide relative overflow-hidden"
+                onClick={() => handleSort(key)}
+              >
+                <span className="truncate block pr-2">{label} <SortIcon column={key} /></span>
+                <div
+                  className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/60 active:bg-blue-500 z-30"
+                  onMouseDown={(e) => handleResizeStart(e, key)}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
@@ -391,7 +469,7 @@ export function FileTable({
                   className="rounded bg-gray-700 border-gray-600 w-3 h-3"
                 />
               </td>
-              <td className="px-1 py-0.5 max-w-[180px]" title={renamingPath === file.path ? file.filename : file.title}>
+              <td className="px-1 py-0.5 overflow-hidden" title={renamingPath === file.path ? file.filename : file.title}>
                 {renamingPath === file.path ? (
                   <input
                     type="text"
@@ -425,16 +503,25 @@ export function FileTable({
                   <span className="truncate block">{file.title}</span>
                 )}
               </td>
-              <td className="px-1 py-0.5 truncate max-w-[120px] text-gray-400" title={file.artist}>
+              <td className="px-1 py-0.5 truncate overflow-hidden text-gray-400" title={file.artist}>
                 {file.artist || '-'}
               </td>
-              <td className="px-1 py-0.5 truncate max-w-[120px] text-gray-400" title={file.album}>
+              <td className="px-1 py-0.5 truncate overflow-hidden text-gray-400" title={file.album}>
                 {file.album || '-'}
               </td>
-              <td className="px-1 py-0.5 text-gray-500 text-[10px]">
+              <td className="px-1 py-0.5 truncate overflow-hidden text-gray-400" title={file.genre}>
+                {file.genre || '-'}
+              </td>
+              <td className="px-1 py-0.5 text-gray-500 text-[10px] uppercase overflow-hidden truncate">
+                {file.format}
+              </td>
+              <td className="px-1 py-0.5 text-gray-500 text-[10px] overflow-hidden truncate">
                 {file.bitrate ?? '—'}
               </td>
-              <td className="px-1 py-0.5">
+              <td className="px-1 py-0.5 text-gray-500 text-[10px] overflow-hidden truncate">
+                {formatSize(file.size)}
+              </td>
+              <td className="px-1 py-0.5 overflow-hidden">
                 <RatingStars
                   rating={file.rating}
                   editable={!!onRatingChange}
@@ -442,7 +529,7 @@ export function FileTable({
                   size="small"
                 />
               </td>
-              <td className="px-1 py-0.5 text-gray-400 text-[10px]">
+              <td className="px-1 py-0.5 text-gray-400 text-[10px] overflow-hidden truncate">
                 {formatDate(file.lastMetadataUpdate)}
               </td>
             </tr>
@@ -454,7 +541,10 @@ export function FileTable({
       {contextMenu.visible && (
         <div
           className="fixed bg-gray-800 border border-gray-700 rounded shadow-lg py-0.5 z-50 min-w-32 font-tech text-xs"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
+          style={{
+            left: Math.min(contextMenu.x, window.innerWidth - 180),
+            top: Math.min(contextMenu.y, window.innerHeight - 320),
+          }}
         >
           <button
             className="w-full px-2 py-1 text-left hover:bg-gray-700 flex items-center gap-1"

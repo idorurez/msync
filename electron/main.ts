@@ -513,6 +513,7 @@ ipcMain.handle('scan-android-folder-incremental', async (_, folderPath: string) 
       title: f.title,
       artist: f.artist,
       album: f.album,
+      genre: f.genre,
       rating: f.rating,
       bitrate: f.bitrate ?? null
     }));
