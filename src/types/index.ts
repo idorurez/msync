@@ -113,7 +113,8 @@ export interface ElectronAPI {
     outputPath: string,
     ytdlpPath: string,
     ffmpegPath?: string
-  ) => Promise<{ success: boolean; fileCount?: number; error?: string }>;
+  ) => Promise<{ success: boolean; fileCount?: number; skippedCount?: number; error?: string }>;
+  onYtdlpProgress: (callback: (data: { message: string; isError?: boolean }) => void) => () => void;
 
   // Database operations
   scanLocalFolderIncremental: (path: string) => Promise<MusicFile[]>;

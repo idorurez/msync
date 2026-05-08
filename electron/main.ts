@@ -451,31 +451,46 @@ ipcMain.handle('download-with-ytdlp', async (_, url: string, outputPath: string,
       args.push('--yes-playlist');
     }
 
-    let fileCount = 0;
+    const downloadedFiles = new Set<string>();
+    const skippedFiles = new Set<string>();
     let lastError = '';
 
     const process = spawn(ytdlpPath, args, {
       windowsHide: true,
     });
 
+    const trackOutput = (output: string) => {
+      // Final MP3 path comes from [ExtractAudio] Destination: <path>
+      const extractMatch = output.match(/\[ExtractAudio\] Destination: (.+?)(?:\r|\n|$)/);
+      if (extractMatch) {
+        downloadedFiles.add(extractMatch[1].trim());
+      }
+      // Skipped (already-downloaded) entries: "[download] <path> has already been downloaded"
+      const skipMatch = output.match(/\[download\] (.+?) has already been downloaded/);
+      if (skipMatch) {
+        skippedFiles.add(skipMatch[1].trim());
+      }
+    };
+
     process.stdout.on('data', (data: Buffer) => {
       const output = data.toString();
-      // Count downloaded files
-      if (output.includes('[download] Destination:') || output.includes('[ExtractAudio] Destination:')) {
-        fileCount++;
-      }
-      // Send progress updates
+      trackOutput(output);
       mainWindow?.webContents.send('ytdlp-progress', { message: output.trim() });
     });
 
     process.stderr.on('data', (data: Buffer) => {
       lastError = data.toString();
+      trackOutput(lastError);
       mainWindow?.webContents.send('ytdlp-progress', { message: lastError.trim(), isError: true });
     });
 
     process.on('close', (code) => {
       if (code === 0) {
-        resolve({ success: true, fileCount: Math.max(1, fileCount) });
+        resolve({
+          success: true,
+          fileCount: downloadedFiles.size,
+          skippedCount: skippedFiles.size
+        });
       } else {
         resolve({ success: false, error: lastError || `yt-dlp exited with code ${code}` });
       }

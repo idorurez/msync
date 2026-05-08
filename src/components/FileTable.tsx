@@ -120,19 +120,22 @@ export function FileTable({
 
   // Column reorder via drag-and-drop on headers
   const handleColDragStart = useCallback((e: React.DragEvent, key: SortKey) => {
+    e.stopPropagation();
     setDraggedCol(key);
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', key);
+    e.dataTransfer.setData('application/x-msync-column', key);
   }, []);
 
   const handleColDragOver = useCallback((e: React.DragEvent, key: SortKey) => {
     e.preventDefault();
+    e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
     setDragOverCol(key);
   }, []);
 
   const handleColDrop = useCallback((e: React.DragEvent, targetKey: SortKey) => {
     e.preventDefault();
+    e.stopPropagation();
     if (draggedCol && draggedCol !== targetKey) {
       setColumnOrder(prev => {
         const newOrder = prev.filter(k => k !== draggedCol);
@@ -352,6 +355,8 @@ export function FileTable({
   }, [files, selectedFiles, onSelectFiles]);
 
   const handleDragOver = useCallback((event: React.DragEvent) => {
+    // Ignore column reorder drags
+    if (event.dataTransfer.types.includes('application/x-msync-column')) return;
     if (isDropTarget) {
       event.preventDefault();
       event.dataTransfer.dropEffect = 'copy';
@@ -364,6 +369,8 @@ export function FileTable({
   }, []);
 
   const handleDrop = useCallback((event: React.DragEvent) => {
+    // Ignore column reorder drops
+    if (event.dataTransfer.types.includes('application/x-msync-column')) return;
     event.preventDefault();
     setIsDragOver(false);
 

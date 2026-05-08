@@ -104,8 +104,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     outputPath: string,
     ytdlpPath: string,
     ffmpegPath?: string
-  ): Promise<{ success: boolean; fileCount?: number; error?: string }> =>
+  ): Promise<{ success: boolean; fileCount?: number; skippedCount?: number; error?: string }> =>
     ipcRenderer.invoke('download-with-ytdlp', url, outputPath, ytdlpPath, ffmpegPath),
+
+  onYtdlpProgress: (callback: (data: { message: string; isError?: boolean }) => void) => {
+    const handler = (_: unknown, data: { message: string; isError?: boolean }) => callback(data);
+    ipcRenderer.on('ytdlp-progress', handler);
+    return () => ipcRenderer.removeListener('ytdlp-progress', handler);
+  },
 
   // Database operations
   scanLocalFolderIncremental: (path: string): Promise<MusicFile[]> =>

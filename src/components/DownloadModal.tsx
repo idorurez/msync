@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 interface DownloadModalProps {
   ytdlpPath: string;
@@ -19,6 +19,21 @@ export function DownloadModal({ ytdlpPath, ffmpegPath, outputPath, onClose, onDo
   const [url, setUrl] = useState('');
   const [downloadPath, setDownloadPath] = useState(outputPath);
   const [progress, setProgress] = useState<DownloadProgress>({ status: 'idle', message: '' });
+  const [logs, setLogs] = useState<Array<{ message: string; isError?: boolean }>>([]);
+  const logEndRef = useRef<HTMLDivElement>(null);
+
+  // Subscribe to yt-dlp progress events
+  useEffect(() => {
+    const unsubscribe = window.electronAPI.onYtdlpProgress((data) => {
+      setLogs(prev => [...prev, data]);
+    });
+    return unsubscribe;
+  }, []);
+
+  // Auto-scroll log to bottom on new entries
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [logs]);
 
   const handleBrowsePath = async () => {
     const selected = await window.electronAPI.selectFolder();
@@ -42,16 +57,26 @@ export function DownloadModal({ ytdlpPath, ffmpegPath, outputPath, onClose, onDo
     }
 
     setProgress({ status: 'downloading', message: 'Starting download...' });
+    setLogs([]);
 
     try {
       const result = await window.electronAPI.downloadWithYtdlp(url.trim(), downloadPath, ytdlpPath, ffmpegPath);
 
       if (result.success) {
-        setProgress({
-          status: 'complete',
-          message: `Downloaded ${result.fileCount || 1} file(s) successfully!`
-        });
-        onDownloadComplete();
+        const fileCount = result.fileCount ?? 0;
+        const skippedCount = result.skippedCount ?? 0;
+        let message: string;
+        if (fileCount === 0 && skippedCount === 0) {
+          message = 'No files were downloaded.';
+        } else if (fileCount === 0 && skippedCount > 0) {
+          message = `All ${skippedCount} file(s) already downloaded — skipped.`;
+        } else if (skippedCount > 0) {
+          message = `Downloaded ${fileCount} new file(s), skipped ${skippedCount} existing.`;
+        } else {
+          message = `Downloaded ${fileCount} file(s) successfully!`;
+        }
+        setProgress({ status: 'complete', message });
+        if (fileCount > 0) onDownloadComplete();
       } else {
         setProgress({ status: 'error', message: result.error || 'Download failed' });
       }
@@ -155,6 +180,21 @@ export function DownloadModal({ ytdlpPath, ffmpegPath, outputPath, onClose, onDo
                   {progress.message}
                 </p>
               </div>
+            </div>
+          )}
+
+          {/* Live log output */}
+          {logs.length > 0 && (
+            <div className="bg-black/50 border border-theme rounded-theme p-2 max-h-48 overflow-y-auto font-mono text-[11px] leading-tight">
+              {logs.map((log, i) => (
+                <div
+                  key={i}
+                  className={`whitespace-pre-wrap break-all ${log.isError ? 'text-red-400' : 'text-gray-300'}`}
+                >
+                  {log.message}
+                </div>
+              ))}
+              <div ref={logEndRef} />
             </div>
           )}
         </div>
